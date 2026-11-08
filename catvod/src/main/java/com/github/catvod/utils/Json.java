@@ -2,10 +2,14 @@ package com.github.catvod.utils;
 
 import android.text.TextUtils;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.Strictness;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -15,6 +19,19 @@ import java.util.Map;
 
 public class Json {
 
+    private static final Gson OUTPUT = new GsonBuilder().disableHtmlEscaping().create();
+    private static final Gson STRICT = new GsonBuilder().setStrictness(Strictness.STRICT).create();
+
+    public static JsonElement strict(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("Value must be JSON");
+        return STRICT.fromJson(value, JsonElement.class);
+    }
+
+    public static String link(String name, JsonObject target) {
+        if (target == null) throw new IllegalArgumentException("Link requires a target object");
+        return "[a=cr:" + OUTPUT.toJson(target) + "/]" + name + "[/a]";
+    }
+
     public static JsonElement parse(String json) {
         try {
             return JsonParser.parseString(json);
@@ -23,8 +40,9 @@ public class Json {
         }
     }
 
-    public static boolean valid(String text) {
+    public static boolean isObj(String text) {
         try {
+            if (TextUtils.isEmpty(text)) return false;
             new JSONObject(text);
             return true;
         } catch (Exception e) {
@@ -32,8 +50,23 @@ public class Json {
         }
     }
 
-    public static boolean invalid(String text) {
-        return !valid(text);
+    public static boolean isArray(String text) {
+        try {
+            if (TextUtils.isEmpty(text)) return false;
+            new JSONArray(text);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static boolean isEmpty(JsonObject obj, String key) {
+        if (!obj.has(key)) return true;
+        JsonElement element = obj.get(key);
+        if (element.isJsonNull()) return true;
+        if (element.isJsonArray()) return element.getAsJsonArray().isEmpty();
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) return element.getAsString().trim().isEmpty();
+        return true;
     }
 
     public static String safeString(JsonObject obj, String key) {
@@ -56,7 +89,7 @@ public class Json {
         List<JsonElement> result = new ArrayList<>();
         if (!obj.has(key)) return result;
         if (obj.get(key).isJsonObject()) result.add(obj.get(key).getAsJsonObject());
-        for (JsonElement opt : obj.getAsJsonArray(key)) result.add(opt.getAsJsonObject());
+        else for (JsonElement opt : obj.getAsJsonArray(key)) result.add(opt.getAsJsonObject());
         return result;
     }
 
@@ -78,11 +111,5 @@ public class Json {
         JsonObject object = safeObject(element);
         for (Map.Entry<String, JsonElement> entry : object.entrySet()) map.put(entry.getKey(), safeString(object, entry.getKey()));
         return map;
-    }
-
-    public static JsonObject toObject(Map<String, String> map) {
-        JsonObject object = new JsonObject();
-        for (String key : map.keySet()) object.addProperty(key, map.get(key));
-        return object;
     }
 }

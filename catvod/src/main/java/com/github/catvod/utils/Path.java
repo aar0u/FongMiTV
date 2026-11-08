@@ -1,26 +1,35 @@
 package com.github.catvod.utils;
 
+import android.net.Uri;
 import android.os.Environment;
-import android.util.Log;
+import android.system.ErrnoException;
+import android.system.Os;
 
-import com.github.catvod.Init;
+import com.github.catvod.Runtime;
+import com.orhanobut.logger.Logger;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 public class Path {
 
     private static final String TAG = Path.class.getSimpleName();
+    private static final int BUFFER_SIZE = 16 * 1024;
 
     private static File mkdir(File file) {
-        if (!file.exists()) file.mkdirs();
+        if (file == null || file.exists()) return file;
+        if (file.mkdirs()) Logger.t(TAG).d("Created dir:" + file);
         return file;
     }
 
@@ -28,16 +37,20 @@ public class Path {
         return new File(path.replace("file://", "")).exists();
     }
 
+    public static boolean exists(File file) {
+        return file != null && file.exists() && file.length() > 0;
+    }
+
     public static File root() {
         return Environment.getExternalStorageDirectory();
     }
 
     public static File cache() {
-        return Init.context().getCacheDir();
+        return Runtime.context().getCacheDir();
     }
 
     public static File files() {
-        return Init.context().getFilesDir();
+        return Runtime.context().getFilesDir();
     }
 
     public static String rootPath() {
@@ -45,43 +58,59 @@ public class Path {
     }
 
     public static File tv() {
-        return mkdir(new File(root() + File.separator + "TV"));
+        return mkdir(new File(root(), "TV"));
+    }
+
+    public static File backup() {
+        return mkdir(new File(tv(), "backup"));
+    }
+
+    public static File font() {
+        return mkdir(new File(tv(), "fonts"));
+    }
+
+    public static File wall(int index) {
+        return files("wallpaper_" + index);
+    }
+
+    public static File wallCache() {
+        return files("wallpaper_cache");
     }
 
     public static File so() {
-        return mkdir(new File(files() + File.separator + "so"));
+        return mkdir(new File(files(), "so"));
     }
 
     public static File js() {
-        return mkdir(new File(cache() + File.separator + "js"));
+        return mkdir(new File(cache(), "js"));
     }
 
     public static File py() {
-        return mkdir(new File(cache() + File.separator + "py"));
+        return mkdir(new File(cache(), "py"));
     }
 
     public static File jar() {
-        return mkdir(new File(cache() + File.separator + "jar"));
+        return mkdir(new File(cache(), "jar"));
     }
 
-    public static File doh() {
-        return mkdir(new File(cache() + File.separator + "doh"));
+    public static File exoCache() {
+        return mkdir(new File(cache(), "exo"));
     }
 
-    public static File exo() {
-        return mkdir(new File(cache() + File.separator + "exo"));
+    public static File mpvCache() {
+        return mkdir(new File(cache(), "mpv"));
+    }
+
+    public static File mpv() {
+        return mkdir(new File(tv(), "mpv"));
     }
 
     public static File epg() {
-        return mkdir(new File(cache() + File.separator + "epg"));
-    }
-
-    public static File jpa() {
-        return mkdir(new File(cache() + File.separator + "jpa"));
+        return mkdir(new File(cache(), "epg"));
     }
 
     public static File thunder() {
-        return mkdir(new File(cache() + File.separator + "thunder"));
+        return mkdir(new File(cache(), "thunder"));
     }
 
     public static File root(String name) {
@@ -100,6 +129,10 @@ public class Path {
         return new File(files(), name);
     }
 
+    public static File mpv(String name) {
+        return new File(mpv(), name);
+    }
+
     public static File epg(String name) {
         return new File(epg(), name);
     }
@@ -113,7 +146,7 @@ public class Path {
     }
 
     public static File jar(String name) {
-        return new File(jar(), Util.md5(name).concat(".jar"));
+        return new File(jar(), Crypto.md5(name).concat(".jar"));
     }
 
     public static File thunder(String name) {
@@ -121,22 +154,14 @@ public class Path {
     }
 
     public static File local(String path) {
-        File file1 = new File(path.replace("file:/", ""));
-        File file2 = new File(path.replace("file:/", rootPath()));
-        return file2.exists() ? file2 : file1.exists() ? file1 : new File(path);
+        path = path.replace("file:/", "");
+        File file = new File(root(), path);
+        return file.exists() ? file : new File(path);
     }
 
     public static String read(File file) {
         try {
-            return read(new FileInputStream(file));
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    public static String read(String path) {
-        try {
-            return read(new FileInputStream(local(path)));
+            return new String(readToByte(file), StandardCharsets.UTF_8);
         } catch (Exception e) {
             return "";
         }
@@ -144,87 +169,188 @@ public class Path {
 
     public static String read(InputStream is) {
         try {
-            byte[] data = new byte[is.available()];
-            is.read(data);
-            is.close();
-            return new String(data, StandardCharsets.UTF_8);
+            return readOrThrow(is);
         } catch (IOException e) {
-            e.printStackTrace();
             return "";
         }
     }
 
+    public static String readOrThrow(InputStream is) throws IOException {
+        return new String(readToByte(is), StandardCharsets.UTF_8);
+    }
+
+    public static InputStream open(Uri uri, String error) throws IOException {
+        InputStream input = Runtime.context().getContentResolver().openInputStream(uri);
+        if (input == null) throw new IOException(error);
+        return input;
+    }
+
     public static byte[] readToByte(File file) {
-        try {
-            FileInputStream is = new FileInputStream(file);
-            byte[] data = new byte[is.available()];
-            is.read(data);
-            is.close();
-            return data;
+        try (FileInputStream is = new FileInputStream(file)) {
+            return readToByte(is);
         } catch (IOException e) {
-            e.printStackTrace();
             return new byte[0];
         }
     }
 
-    public static File write(File file, byte[] data) {
-        try {
-            FileOutputStream fos = new FileOutputStream(create(file));
-            fos.write(data);
-            fos.flush();
-            fos.close();
+    public static byte[] readToByte(InputStream is) throws IOException {
+        try (InputStream input = is; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            transfer(input, bos);
+            return bos.toByteArray();
+        }
+    }
+
+    public static File write(File file, InputStream is) {
+        try (InputStream input = is; FileOutputStream output = new FileOutputStream(create(file))) {
+            transfer(input, output);
             return file;
-        } catch (Exception ignored) {
-            ignored.printStackTrace();
+        } catch (IOException e) {
             return file;
         }
     }
 
-    public static void move(File in, File out) {
-        copy(in, out);
-        clear(in);
+    public static void writeAtomically(File file, InputStream is) throws IOException {
+        try (InputStream input = is) {
+            File parent = file.getAbsoluteFile().getParentFile();
+            if (parent == null || (!parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory())) throw new IOException("Unable to create " + parent);
+            File temp = File.createTempFile("write-", ".tmp", parent);
+            try {
+                writeSynced(temp, input);
+                move(temp, file);
+            } finally {
+                clear(temp);
+            }
+        }
+    }
+
+    private static void writeSynced(File file, InputStream input) throws IOException {
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            transfer(input, output);
+            output.flush();
+            output.getFD().sync();
+        }
+    }
+
+    public static void writeAtomically(File file, File source) throws IOException {
+        if (source.getCanonicalFile().equals(file.getCanonicalFile())) return;
+        writeAtomically(file, new FileInputStream(source));
+    }
+
+    public static void writeAtomically(File file, Uri source) throws IOException {
+        writeAtomically(file, open(source, "Unable to open " + source));
+    }
+
+    public static void writeAtomically(File file, byte[] data) throws IOException {
+        writeAtomically(file, new ByteArrayInputStream(data));
+    }
+
+    public static File write(File file, byte[] data) {
+        try (FileOutputStream fos = new FileOutputStream(create(file))) {
+            fos.write(data);
+            fos.flush();
+            return file;
+        } catch (IOException e) {
+            return file;
+        }
     }
 
     public static void copy(File in, File out) {
         try {
-            copy(new FileInputStream(in), out);
-        } catch (Exception ignored) {
+            copyOrThrow(in, out);
+        } catch (IOException ignored) {
         }
     }
 
     public static void copy(InputStream in, File out) {
         try {
-            int read;
-            byte[] buffer = new byte[8192];
-            FileOutputStream fos = new FileOutputStream(create(out));
-            while ((read = in.read(buffer)) != -1) fos.write(buffer, 0, read);
-            fos.close();
-            in.close();
-        } catch (Exception ignored) {
+            copyOrThrow(in, out);
+        } catch (IOException ignored) {
         }
+    }
+
+    public static void move(File source, File target) throws IOException {
+        try {
+            Os.rename(source.getAbsolutePath(), target.getAbsolutePath());
+        } catch (ErrnoException e) {
+            throw new IOException("Unable to move file", e);
+        }
+    }
+
+    public static long size(File file) {
+        long total = 0;
+        if (file == null) return total;
+        if (file.isDirectory()) for (File child : list(file)) total += size(child);
+        else total = file.length();
+        return total;
+    }
+
+    public static long available(File file) {
+        File directory = file == null ? null : file.getAbsoluteFile();
+        while (directory != null && !directory.isDirectory()) directory = directory.getParentFile();
+        return directory == null ? 0 : directory.getUsableSpace();
+    }
+
+    public static void requireSpace(File file, long bytes) throws IOException {
+        if (bytes > 0 && available(file) < bytes) throw new IOException("Insufficient storage space");
+    }
+
+    private static void copyOrThrow(File in, File out) throws IOException {
+        if (!in.getCanonicalFile().equals(out.getCanonicalFile())) copyOrThrow(new FileInputStream(in), out);
+    }
+
+    private static void copyOrThrow(InputStream in, File out) throws IOException {
+        try (InputStream input = in; FileOutputStream output = new FileOutputStream(create(out))) {
+            transfer(input, output);
+        }
+    }
+
+    private static void transfer(InputStream input, OutputStream output) throws IOException {
+        int read;
+        byte[] buffer = new byte[BUFFER_SIZE];
+        while ((read = input.read(buffer)) != -1) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("Canceled");
+            output.write(buffer, 0, read);
+        }
+    }
+
+    public static void sort(File[] files) {
+        Arrays.sort(files, (o1, o2) -> {
+            if (o1.isDirectory() && o2.isFile()) return -1;
+            if (o1.isFile() && o2.isDirectory()) return 1;
+            return o1.getName().compareToIgnoreCase(o2.getName());
+        });
     }
 
     public static List<File> list(File dir) {
         File[] files = dir.listFiles();
-        return files == null ? Collections.emptyList() : Arrays.asList(files);
+        if (files != null) sort(files);
+        return files == null ? new ArrayList<>() : Arrays.asList(files);
     }
 
     public static void clear(File dir) {
         if (dir == null) return;
         if (dir.isDirectory()) for (File file : list(dir)) clear(file);
-        if (dir.delete()) Log.d(TAG, "Deleted:" + dir.getAbsolutePath());
+        if (dir.delete()) Logger.t(TAG).d("Deleted:" + dir);
     }
 
-    public static File create(File file) throws Exception {
+    public static File create(File file) {
         try {
-            if (file.getParentFile() != null) mkdir(file.getParentFile());
-            if (!file.canWrite()) file.setWritable(true);
-            if (!file.exists()) file.createNewFile();
-            Shell.exec("chmod 777 " + file);
-            return file;
-        } catch (Exception e) {
-            e.printStackTrace();
+            File parent = file.getParentFile();
+            if (parent != null) mkdir(parent);
+            if (file.exists()) clear(file);
+            if (file.createNewFile()) Logger.t(TAG).d("Create:" + file);
+            return chmod(file);
+        } catch (IOException e) {
             return file;
         }
+    }
+
+    public static File chmod(File file) {
+        try {
+            Os.chmod(file.getAbsolutePath(), 0777);
+        } catch (ErrnoException e) {
+            e.printStackTrace();
+        }
+        return file;
     }
 }

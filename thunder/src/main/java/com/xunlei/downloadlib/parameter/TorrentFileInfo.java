@@ -1,15 +1,14 @@
 package com.xunlei.downloadlib.parameter;
 
+import android.net.Uri;
 import android.text.TextUtils;
 
 import com.xunlei.downloadlib.Util;
 
 import java.io.File;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.Locale;
 
-public class TorrentFileInfo {
+public class TorrentFileInfo implements Comparable<TorrentFileInfo> {
 
     public boolean isSelected;
     public String mFileName;
@@ -45,23 +44,23 @@ public class TorrentFileInfo {
     }
 
     public String getPlayUrl() {
-        return "magnet://" + getFile().getAbsolutePath() + "?name=" + getFileName() + "&index=" + getFileIndex();
+        String name = TextUtils.isEmpty(mSubPath) ? getFileName() : mSubPath + "/" + getFileName();
+        return new Uri.Builder()
+                .scheme("magnet")
+                .authority("")
+                .path(getFile().getAbsolutePath())
+                .appendQueryParameter("name", name)
+                .appendQueryParameter("index", String.valueOf(getFileIndex()))
+                .build()
+                .toString();
     }
 
     public String getExt() {
-        return getFileName().contains(".") ? getFileName().substring(getFileName().lastIndexOf(".") + 1).toLowerCase() : "";
+        return getFileName().contains(".") ? getFileName().substring(getFileName().lastIndexOf(".") + 1).toLowerCase(Locale.ROOT) : "";
     }
 
-    public static class Sorter implements Comparator<TorrentFileInfo> {
-
-        public static List<TorrentFileInfo> sort(List<TorrentFileInfo> items) {
-            if (items.size() > 1) Collections.sort(items, new Sorter());
-            return items;
-        }
-
-        @Override
-        public int compare(TorrentFileInfo o1, TorrentFileInfo o2) {
-            return o1.getFileName().compareTo(o2.getFileName());
-        }
+    @Override
+    public int compareTo(TorrentFileInfo other) {
+        return this.getFileName().compareToIgnoreCase(other.getFileName());
     }
 }

@@ -2,49 +2,55 @@ package com.fongmi.android.tv.api.loader;
 
 import com.fongmi.android.tv.App;
 import com.github.catvod.crawler.Spider;
-import com.github.catvod.crawler.SpiderNull;
+import com.github.catvod.runtime.QuickJsRuntime;
+import com.github.catvod.utils.RuntimeModule;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
-public class JsLoader {
+import dalvik.system.DexClassLoader;
 
-    private final ConcurrentHashMap<String, Spider> spiders;
-    private String recent;
+public class JsLoader extends SpiderLoader {
+
+    private final QuickJsRuntime loader;
+    private final QuickJsRuntime.Session module;
+    private volatile String recent;
 
     public JsLoader() {
-        spiders = new ConcurrentHashMap<>();
+        this(RuntimeModule.QUICKJS.entry(QuickJsRuntime.class));
     }
 
-    public void clear() {
-        for (Spider spider : spiders.values()) App.execute(spider::destroy);
-        spiders.clear();
+    JsLoader(JsLoader previous) {
+        this(previous.loader);
     }
 
-    public void setRecent(String recent) {
+    private JsLoader(QuickJsRuntime loader) {
+        module = loader.session();
+        this.loader = loader;
+    }
+
+    @Override
+    protected void clearReferences() {
+        recent = null;
+        module.clear();
+    }
+
+    public synchronized void setRecent(String recent) {
+        checkOpen();
         this.recent = recent;
     }
 
-    public Spider getSpider(String key, String api, String ext) {
-        try {
-            if (spiders.containsKey(key)) return spiders.get(key);
-            Spider spider = new com.fongmi.quickjs.crawler.Spider(key, api);
-            spider.init(App.get(), ext);
-            spiders.put(key, spider);
-            return spider;
-        } catch (Throwable e) {
-            e.printStackTrace();
-            return new SpiderNull();
-        }
+    public Spider getSpider(String key, String api, String ext, String jar) {
+        return load(key, App.get(), ext, () -> newSpider(key, api, BaseLoader.get().dex(jar)));
     }
 
-    public Object[] proxyInvoke(Map<String, String> params) {
-        try {
-            if (!params.containsKey("siteKey")) return spiders.get(recent).proxyLocal(params);
-            return BaseLoader.get().getSpider(params).proxyLocal(params);
-        } catch (Throwable e) {
-            e.printStackTrace();
-            return null;
-        }
+    Spider newSpider(String key, String api, DexClassLoader dex) {
+        Spider spider = module.spider(api, dex, JsHost.INSTANCE);
+        spider.siteKey = key;
+        return spider;
+    }
+
+    public Object[] proxy(Map<String, String> params) throws Exception {
+        Spider spider = findSpider(recent);
+        return spider != null ? spider.proxy(params) : null;
     }
 }

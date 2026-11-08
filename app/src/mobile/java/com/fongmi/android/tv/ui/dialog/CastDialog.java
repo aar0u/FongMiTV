@@ -1,20 +1,13 @@
 package com.fongmi.android.tv.ui.dialog;
 
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
+import android.os.Bundle;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
-import androidx.viewbinding.ViewBinding;
+import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
 
-import com.android.cast.dlna.dmc.DLNACastManager;
-import com.android.cast.dlna.dmc.OnDeviceRegistryListener;
-import com.android.cast.dlna.dmc.control.DeviceControl;
-import com.android.cast.dlna.dmc.control.OnDeviceControlListener;
-import com.android.cast.dlna.dmc.control.ServiceActionCallback;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
@@ -22,55 +15,53 @@ import com.fongmi.android.tv.bean.CastVideo;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.bean.History;
-import com.fongmi.android.tv.databinding.DialogDeviceBinding;
-import com.fongmi.android.tv.event.ScanEvent;
+import com.fongmi.android.tv.dlna.DLNACast;
+import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.server.Server;
-import com.fongmi.android.tv.ui.activity.ScanActivity;
-import com.fongmi.android.tv.ui.adapter.DeviceAdapter;
-import com.fongmi.android.tv.utils.DLNADevice;
+import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.utils.Notify;
-import com.fongmi.android.tv.utils.ScanTask;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Util;
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
-
-import org.fourthline.cling.support.lastchange.EventedValue;
-import org.fourthline.cling.support.model.TransportState;
-import org.greenrobot.eventbus.EventBus;
-import org.greenrobot.eventbus.Subscribe;
-import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.IOException;
-import java.util.List;
 
-import kotlin.Unit;
 import okhttp3.Call;
 import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
 
-public class CastDialog extends BaseDialog implements DeviceAdapter.OnClickListener, ScanTask.Listener, OnDeviceRegistryListener, OnDeviceControlListener, ServiceActionCallback<Unit>, okhttp3.Callback {
+public class CastDialog extends DeviceDialog {
 
-    private final FormBody.Builder body;
     private final OkHttpClient client;
 
-    private DialogDeviceBinding binding;
-    private DeviceAdapter adapter;
-    private DeviceControl control;
-    private Listener listener;
     private CastVideo video;
     private boolean fm;
 
-    public static CastDialog create() {
-        return new CastDialog();
+    public CastDialog() {
+        client = OkHttp.client(Constant.TIMEOUT_SYNC);
     }
 
-    public CastDialog() {
-        body = new FormBody.Builder();
-        body.add("device", Device.get().toString());
-        body.add("config", Config.vod().toString());
-        client = OkHttp.client(Constant.TIMEOUT_SYNC);
+    public static CastDialog create(PlayerManager player) {
+        return createInternal(player, player.isVod());
+    }
+
+    public static CastDialog createLive(PlayerManager player) {
+        return createInternal(player, false);
+    }
+
+    private static CastDialog createInternal(PlayerManager player, boolean app) {
+        CastDialog dialog = new CastDialog();
+        dialog.fm = app;
+        dialog.video = CastVideo.create(player, dialog.fm ? player.getPosition() : C.TIME_UNSET);
+        Bundle args = new Bundle();
+        args.putBoolean("app", dialog.fm);
+        args.putString("video", App.gson().toJson(dialog.video));
+        args.putString("config", Config.vod().toString());
+        dialog.setArguments(args);
+        return dialog;
     }
 
     public CastDialog history(History history) {
@@ -79,162 +70,102 @@ public class CastDialog extends BaseDialog implements DeviceAdapter.OnClickListe
         if (fd.startsWith("/")) fd = Server.get().getAddress() + "/file" + fd.replace(Path.rootPath(), "");
         if (fd.startsWith("file")) fd = Server.get().getAddress() + "/" + fd.replace(Path.rootPath(), "").replace("://", "");
         if (fd.contains("127.0.0.1")) fd = fd.replace("127.0.0.1", Util.getIp());
-        body.add("history", history.toString().replace(id, fd));
-        return this;
-    }
-
-    public CastDialog video(CastVideo video) {
-        this.video = video;
-        return this;
-    }
-
-    public CastDialog fm(boolean fm) {
-        this.fm = fm;
+        requireArguments().putString("history", history.toString().replace(id, fd));
         return this;
     }
 
     public void show(FragmentActivity activity) {
-        for (Fragment f : activity.getSupportFragmentManager().getFragments()) if (f instanceof BottomSheetDialogFragment) return;
+        for (Fragment f : activity.getSupportFragmentManager().getFragments()) if (f instanceof CastDialog) return;
         show(activity.getSupportFragmentManager(), null);
-        this.listener = (Listener) activity;
     }
 
     @Override
-    protected ViewBinding getBinding(@NonNull LayoutInflater inflater, @Nullable ViewGroup container) {
-        return binding = DialogDeviceBinding.inflate(inflater, container, false);
+    protected boolean includeAppDevices() {
+        return fm;
     }
 
     @Override
     protected void initView() {
-        binding.scan.setVisibility(fm ? View.VISIBLE : View.GONE);
-        EventBus.getDefault().register(this);
-        setRecyclerView();
-        getDevice();
-        initDLNA();
+        Bundle args = requireArguments();
+        fm = args.getBoolean("app");
+        video = App.gson().fromJson(args.getString("video"), CastVideo.class);
+        super.initView();
+        binding.title.setText(R.string.device_cast_title);
     }
 
     @Override
-    protected void initEvent() {
-        binding.scan.setOnClickListener(v -> onScan());
-        binding.refresh.setOnClickListener(v -> onRefresh());
-    }
-
-    private void setRecyclerView() {
-        binding.recycler.setHasFixedSize(true);
-        binding.recycler.setAdapter(adapter = new DeviceAdapter(this));
-    }
-
-    private void getDevice() {
-        if (fm) adapter.addAll(Device.getAll());
-        adapter.addAll(DLNADevice.get().getAll());
-    }
-
-    private void initDLNA() {
-        DLNACastManager.INSTANCE.bindCastService(App.get());
-        DLNACastManager.INSTANCE.registerDeviceListener(this);
-    }
-
-    private void onScan() {
-        ScanActivity.start(getActivity());
-    }
-
-    private void onRefresh() {
-        if (fm) ScanTask.create(this).start(adapter.getIps());
-        DLNACastManager.INSTANCE.search(null);
-        adapter.clear();
-    }
-
-    private void onCasted() {
-        listener.onCasted();
-        dismiss();
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onScanEvent(ScanEvent event) {
-        ScanTask.create(this).start(event.getAddress());
-    }
-
-    @Override
-    public void onFind(List<Device> devices) {
-        if (!devices.isEmpty()) adapter.addAll(devices);
-    }
-
-    @Override
-    public void onDeviceAdded(@NonNull org.fourthline.cling.model.meta.Device<?, ?, ?> device) {
-        adapter.addAll(DLNADevice.get().add(device));
-    }
-
-    @Override
-    public void onDeviceRemoved(@NonNull org.fourthline.cling.model.meta.Device<?, ?, ?> device) {
-        adapter.remove(DLNADevice.get().remove(device));
-    }
-
-    @Override
-    public void onConnected(@NonNull org.fourthline.cling.model.meta.Device<?, ?, ?> device) {
-        control.setAVTransportURI(video.getUrl(), video.getName(), this);
-    }
-
-    @Override
-    public void onDisconnected(@NonNull org.fourthline.cling.model.meta.Device<?, ?, ?> device) {
-        Notify.show(R.string.device_offline);
-    }
-
-    @Override
-    public void onSuccess(Unit unit) {
-        control.play("1", null);
-        onCasted();
-    }
-
-    @Override
-    public void onFailure(@NonNull String s) {
-        Notify.show(s);
-    }
-
-    @Override
-    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-        App.post(() -> Notify.show(e.getMessage()));
-    }
-
-    @Override
-    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-        if (response.body().string().equals("OK")) App.post(this::onCasted);
-        else App.post(() -> Notify.show(R.string.device_offline));
+    protected boolean includeDlnaDevices() {
+        return true;
     }
 
     @Override
     public void onItemClick(Device item) {
-        if (item.isDLNA()) control = DLNACastManager.INSTANCE.connectDevice(DLNADevice.get().find(item), this);
-        else OkHttp.newCall(client, item.getIp().concat("/action?do=cast"), body.build()).enqueue(this);
+        requestLocalNetwork(() -> cast(item));
     }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        DLNADevice.get().disconnect();
-        EventBus.getDefault().unregister(this);
-        DLNACastManager.INSTANCE.unregisterListener(this);
-        DLNACastManager.INSTANCE.unbindCastService(App.get());
+    private void cast(Device item) {
+        if (!accepts(item)) return;
+        int id = beginOperation(item, R.string.device_cast_pending);
+        if (id == 0) return;
+        Callback callback = getCallback(id);
+        if (item.isDLNA()) new DLNACast(video, callback).cast(item);
+        else OkHttp.newCall(client, item.getIp().concat("/action?do=cast"), buildBody()).enqueue(callback);
     }
 
-    @Override
-    public void onAvTransportStateChanged(@NonNull TransportState state) {
+    private PlayerManager getSourcePlayer() {
+        PlaybackService service = Server.get().getService();
+        PlayerManager player = service == null ? null : service.player();
+        if (player == null || player.isReleased() || player.isEmpty()) return null;
+        return video.equals(CastVideo.create(player, video.position())) ? player : null;
     }
 
-    @Override
-    public void onEventChanged(@NonNull EventedValue<?> event) {
+    private Callback getCallback(int id) {
+        PlayerManager player = getSourcePlayer();
+        MediaItem source = player == null ? null : player.getCurrentMediaItem();
+        return new Callback() {
+            @Override
+            public void success() {
+                if (!completeOperation(id)) return;
+                if (source != null && !player.isReleased() && source == player.getCurrentMediaItem()) ((CastDialog.Listener) requireActivity()).onCasted();
+                dismiss();
+            }
+
+            @Override
+            public void error(String msg) {
+                if (completeOperation(id)) Notify.show(msg);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) {
+                try (Response res = response) {
+                    boolean accepted = res.isSuccessful() && res.body() != null && res.body().string().equals("OK");
+                    App.post(() -> {
+                        if (accepted) success();
+                        else error(ResUtil.getString(R.string.device_offline));
+                    });
+                } catch (IOException e) {
+                    onFailure(call, e);
+                }
+            }
+
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                App.post(() -> error(e.getMessage()));
+            }
+        };
     }
 
-    @Override
-    public void onRendererVolumeChanged(int volume) {
+    private History getCastHistory() {
+        History history = History.objectFrom(requireArguments().getString("history"));
+        PlayerManager player = getSourcePlayer();
+        if (player != null) history.setPosition(player.getPosition());
+        return history;
     }
 
-    @Override
-    public void onRendererVolumeMuteChanged(boolean mute) {
-    }
-
-    @Override
-    public boolean onLongClick(Device item) {
-        return false;
+    private FormBody buildBody() {
+        History history = getCastHistory();
+        Bundle args = requireArguments();
+        return new FormBody.Builder().add("device", Device.get().toString()).add("config", args.getString("config")).add("history", history.toString()).build();
     }
 
     public interface Listener {

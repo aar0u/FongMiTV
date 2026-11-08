@@ -1,150 +1,136 @@
 package com.fongmi.android.tv.player.exo;
 
 import android.content.Context;
-import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
-import android.text.TextUtils;
-import android.view.accessibility.CaptioningManager;
+import android.os.Handler;
+import android.os.Looper;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
-import androidx.media3.common.PlaybackException;
-import androidx.media3.common.TrackSelectionOverride;
-import androidx.media3.common.Tracks;
-import androidx.media3.common.util.Util;
+import androidx.media3.common.audio.AudioProcessor;
+import androidx.media3.decoder.ffmpeg.FfmpegMotionRenderersFactory;
+import androidx.media3.exoplayer.DecoderManager;
 import androidx.media3.exoplayer.DefaultLoadControl;
-import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.LoadControl;
+import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.RenderersFactory;
-import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.analytics.PlayerId;
+import androidx.media3.exoplayer.audio.AudioSink;
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider;
+import androidx.media3.exoplayer.audio.DefaultAudioSink;
+import androidx.media3.exoplayer.libass.LibassPlaybackSession;
+import androidx.media3.exoplayer.source.preload.DefaultPreloadManager;
+import androidx.media3.exoplayer.text.TextOutput;
+import androidx.media3.exoplayer.text.TextRenderer;
+import androidx.media3.exoplayer.trackselection.DecodeTrackSelector;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
-import androidx.media3.exoplayer.trackselection.TrackSelector;
-import androidx.media3.ui.CaptionStyleCompat;
-import androidx.media3.ui.PlayerView;
 
 import com.fongmi.android.tv.App;
-import com.fongmi.android.tv.BuildConfig;
-import com.fongmi.android.tv.Setting;
-import com.fongmi.android.tv.bean.Drm;
-import com.fongmi.android.tv.bean.Sub;
+import com.fongmi.android.tv.player.track.LangUtil;
+import com.fongmi.android.tv.setting.DecodeSetting;
+import com.fongmi.android.tv.setting.PlayerSetting;
+import com.fongmi.android.tv.setting.SpeedSetting;
+import com.github.catvod.utils.Auth;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-public class ExoUtil {
+public final class ExoUtil {
 
-    public static String getUa() {
-        return Util.getUserAgent(App.get(), BuildConfig.APPLICATION_ID);
+    public static ExoPlayer buildPlayer(DefaultPreloadManager.Builder preloadManagerBuilder) {
+        ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(App.get()).setSkipSilenceEnabled(SpeedSetting.isSkipSilence());
+        ExoPlayer player = preloadManagerBuilder.buildExoPlayer(playerBuilder);
+        player.setAudioAttributes(AudioAttributes.DEFAULT, true);
+        player.setHandleAudioBecomingNoisy(true);
+        player.setPlayWhenReady(true);
+        return player;
     }
 
-    public static LoadControl buildLoadControl() {
-        return new DefaultLoadControl();
+    static LoadControl buildLoadControl(int maxPreloadBufferBytes) {
+        int buffer = PlayerSetting.getBuffer();
+        return new DefaultLoadControl.Builder()
+                .setBufferDurationsMsForStreaming(DefaultLoadControl.DEFAULT_MIN_BUFFER_MS * buffer, DefaultLoadControl.DEFAULT_MAX_BUFFER_MS * buffer, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS)
+                .setBufferDurationsMsForLocalPlayback(DefaultLoadControl.DEFAULT_MIN_BUFFER_FOR_LOCAL_PLAYBACK_MS * buffer, DefaultLoadControl.DEFAULT_MAX_BUFFER_FOR_LOCAL_PLAYBACK_MS * buffer, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_FOR_LOCAL_PLAYBACK_MS, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_FOR_LOCAL_PLAYBACK_MS)
+                .setPlayerTargetBufferBytes(PlayerId.PRELOAD.name, maxPreloadBufferBytes)
+                .build();
     }
 
-    public static TrackSelector buildTrackSelector() {
-        DefaultTrackSelector trackSelector = new DefaultTrackSelector(App.get());
-        trackSelector.setParameters(trackSelector.buildUponParameters().setPreferredTextLanguage(Locale.getDefault().getISO3Language()).setForceHighestSupportedBitrate(true).setTunnelingEnabled(Setting.isTunnel()));
+    public static Map<String, String> extractHeaders(MediaItem item) {
+        Bundle extras = item.requestMetadata.extras;
+        if (extras == null) return new HashMap<>();
+        return extras.keySet().stream().filter(key -> extras.getString(key) != null).collect(Collectors.toMap(key -> key, extras::getString));
+    }
+
+    public static Auth.Context extractAuth(MediaItem item) {
+        return item.localConfiguration != null && item.localConfiguration.tag instanceof Auth.Context auth ? auth : null;
+    }
+
+    static DecodeTrackSelector buildTrackSelector(DecoderManager decoderManager) {
+        DecodeTrackSelector trackSelector = decoderManager.createTrackSelector(App.get());
+        DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
+        if (DecodeSetting.isPreferAAC()) builder.setPreferredAudioMimeType(MimeTypes.AUDIO_AAC);
+        builder.setPreferredTextLanguages(LangUtil.getPreferredTextLanguages());
+        builder.setTunnelingEnabled(DecodeSetting.isTunnelingEnabled());
+        builder.setForceHighestSupportedBitrate(true);
+        trackSelector.setParameters(builder.build());
         return trackSelector;
     }
 
-    public static RenderersFactory buildRenderersFactory(int renderMode) {
-        return new DefaultRenderersFactory(App.get()).setEnableDecoderFallback(true).setExtensionRendererMode(renderMode);
+    static RenderersFactory buildRenderersFactory() {
+        return new ExoRenderersFactory(null, null, null, null, 0);
     }
 
-    public static MediaSource.Factory buildMediaSourceFactory() {
-        return new MediaSourceFactory();
+    static RenderersFactory buildRenderersFactory(AudioProcessor audioProcessor, TextOutput secondaryTextOutput, LibassPlaybackSession libassPlaybackSession, DecoderManager decoderManager, int motionFps) {
+        return new ExoRenderersFactory(audioProcessor, secondaryTextOutput, libassPlaybackSession, decoderManager, motionFps);
     }
 
-    public static CaptionStyleCompat getCaptionStyle() {
-        return Setting.isCaption() ? CaptionStyleCompat.createFromCaptionStyle(((CaptioningManager) App.get().getSystemService(Context.CAPTIONING_SERVICE)).getUserStyle()) : new CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, null);
-    }
-
-    public static boolean haveTrack(Tracks tracks, int type) {
-        int count = 0;
-        for (Tracks.Group trackGroup : tracks.getGroups()) if (trackGroup.getType() == type) count += trackGroup.length;
-        return count > 0;
-    }
-
-    public static void selectTrack(ExoPlayer player, int group, int track) {
-        List<Integer> trackIndices = new ArrayList<>();
-        selectTrack(player, group, track, trackIndices);
-        setTrackParameters(player, group, trackIndices);
-    }
-
-    public static void deselectTrack(ExoPlayer player, int group, int track) {
-        List<Integer> trackIndices = new ArrayList<>();
-        deselectTrack(player, group, track, trackIndices);
-        setTrackParameters(player, group, trackIndices);
-    }
-
-    public static void resetTrack(ExoPlayer player) {
-        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon().clearOverrides().build());
-    }
-
-    public static void setSubtitleView(PlayerView exo) {
-        exo.getSubtitleView().setStyle(getCaptionStyle());
-        exo.getSubtitleView().setApplyEmbeddedFontSizes(false);
-        exo.getSubtitleView().setApplyEmbeddedStyles(!Setting.isCaption());
-        if (Setting.getSubtitleTextSize() != 0) exo.getSubtitleView().setFractionalTextSize(Setting.getSubtitleTextSize());
-    }
-
-    public static String getMimeType(String path) {
-        if (TextUtils.isEmpty(path)) return "";
-        if (path.endsWith(".vtt")) return MimeTypes.TEXT_VTT;
-        if (path.endsWith(".ssa") || path.endsWith(".ass")) return MimeTypes.TEXT_SSA;
-        if (path.endsWith(".ttml") || path.endsWith(".xml") || path.endsWith(".dfxp")) return MimeTypes.APPLICATION_TTML;
-        return MimeTypes.APPLICATION_SUBRIP;
-    }
-
-    public static String getMimeType(int errorCode) {
-        if (errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED || errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED || errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED) return MimeTypes.APPLICATION_M3U8;
-        return null;
-    }
-
-    public static MediaItem getMediaItem(Map<String, String> headers, Uri uri, String mimeType, Drm drm, List<Sub> subs, int decode) {
-        MediaItem.Builder builder = new MediaItem.Builder().setUri(uri);
-        builder.setRequestMetadata(getRequestMetadata(headers, uri));
-        builder.setSubtitleConfigurations(getSubtitleConfigs(subs));
-        if (drm != null) builder.setDrmConfiguration(drm.get());
-        if (mimeType != null) builder.setMimeType(mimeType);
-        builder.setMediaId(uri.toString());
+    private static AudioSink buildAudioSink(Context context, boolean enableFloatOutput, boolean enableAudioOutputPlaybackParams, @Nullable AudioProcessor audioProcessor) {
+        DefaultAudioSink.Builder builder = new DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput).setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams);
+        if (!DecodeSetting.isAudioPassThrough()) builder.setAudioOutputProvider(new AudioTrackAudioOutputProvider.Builder(null).build());
+        if (audioProcessor != null) builder.setAudioProcessors(new AudioProcessor[]{audioProcessor});
         return builder.build();
     }
 
-    private static MediaItem.RequestMetadata getRequestMetadata(Map<String, String> headers, Uri uri) {
-        Bundle extras = new Bundle();
-        for (Map.Entry<String, String> header : headers.entrySet()) extras.putString(header.getKey(), header.getValue());
-        return new MediaItem.RequestMetadata.Builder().setMediaUri(uri).setExtras(extras).build();
-    }
+    private static final class ExoRenderersFactory extends FfmpegMotionRenderersFactory {
 
-    private static List<MediaItem.SubtitleConfiguration> getSubtitleConfigs(List<Sub> subs) {
-        List<MediaItem.SubtitleConfiguration> configs = new ArrayList<>();
-        for (Sub sub : subs) configs.add(sub.getConfig());
-        return configs;
-    }
+        @Nullable private final AudioProcessor audioProcessor;
+        @Nullable private final TextOutput secondaryTextOutput;
+        @Nullable private final LibassPlaybackSession libassPlaybackSession;
 
-    private static void selectTrack(ExoPlayer player, int group, int track, List<Integer> trackIndices) {
-        if (group >= player.getCurrentTracks().getGroups().size()) return;
-        Tracks.Group trackGroup = player.getCurrentTracks().getGroups().get(group);
-        for (int i = 0; i < trackGroup.length; i++) {
-            if (i == track || trackGroup.isTrackSelected(i)) trackIndices.add(i);
+        private ExoRenderersFactory(@Nullable AudioProcessor audioProcessor, @Nullable TextOutput secondaryTextOutput, @Nullable LibassPlaybackSession libassPlaybackSession, @Nullable DecoderManager decoderManager, int motionFps) {
+            super(App.get(), motionFps == 0 ? 60 : motionFps, 480, motionFps != 0);
+            this.audioProcessor = audioProcessor;
+            this.secondaryTextOutput = secondaryTextOutput;
+            this.libassPlaybackSession = libassPlaybackSession;
+            if (decoderManager != null) setDecoderManager(decoderManager);
+            setEnableDecoderFallback(false);
+            setEnableSurfaceControlFrameRetention(true);
+            experimentalSetEnableMediaCodecVideoRendererPrewarming(true);
+            setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON);
+            setDolbyVisionOutputPolicy(DecodeSetting.getDolbyVisionOutputPolicy());
         }
-    }
 
-    private static void deselectTrack(ExoPlayer player, int group, int track, List<Integer> trackIndices) {
-        if (group >= player.getCurrentTracks().getGroups().size()) return;
-        Tracks.Group trackGroup = player.getCurrentTracks().getGroups().get(group);
-        for (int i = 0; i < trackGroup.length; i++) {
-            if (i != track && trackGroup.isTrackSelected(i)) trackIndices.add(i);
+        @Override
+        protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioOutputPlaybackParams) {
+            return ExoUtil.buildAudioSink(context, enableFloatOutput, enableAudioOutputPlaybackParams, audioProcessor);
         }
-    }
 
-    private static void setTrackParameters(ExoPlayer player, int group, List<Integer> trackIndices) {
-        if (group >= player.getCurrentTracks().getGroups().size()) return;
-        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon().setOverrideForType(new TrackSelectionOverride(player.getCurrentTracks().getGroups().get(group).getMediaTrackGroup(), trackIndices)).build());
+        @Override
+        protected void buildMiscellaneousRenderers(@NonNull Context context, @NonNull Handler eventHandler, int extensionRendererMode, @NonNull ArrayList<Renderer> out) {
+            super.buildMiscellaneousRenderers(context, eventHandler, extensionRendererMode, out);
+            if (libassPlaybackSession != null && libassPlaybackSession.isAvailable()) out.add(libassPlaybackSession.createClockRenderer());
+        }
+
+        @Override
+        protected void buildTextRenderers(@NonNull Context context, @NonNull TextOutput output, @NonNull Looper outputLooper, int extensionRendererMode, @NonNull ArrayList<Renderer> out) {
+            super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out);
+            if (secondaryTextOutput != null) out.add(new TextRenderer(secondaryTextOutput, outputLooper));
+        }
     }
 }

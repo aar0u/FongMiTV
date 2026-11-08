@@ -1,54 +1,27 @@
 plugins {
-    id 'com.android.library'
-    id 'com.chaquo.python'
+    alias libs.plugins.android.library
 }
 
 android {
-    namespace 'com.fongmi.chaquo'
+    namespace = 'com.fongmi.chaquo'
 
-    compileSdk 35
-    flavorDimensions = ["abi"]
+    compileSdk libs.versions.compileSdk.get().toInteger()
 
     defaultConfig {
-        minSdk 21
-        targetSdk 28
-        python {
-            version "3.8"
-            pip {
-                install "lxml"
-                install "ujson"
-                install "pyquery"
-                install "requests"
-                install "jsonpath"
-                install "cachetools"
-                install 'pycryptodome'
-                install 'beautifulsoup4'
-            }
-        }
+        consumerProguardFiles 'consumer-rules.pro'
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
     }
 
-    productFlavors {
-        x86 {
-            dimension "abi"
-            ndk { abiFilters "x86" }
-        }
-        arm64_v8a {
-            dimension "abi"
-            ndk { abiFilters "arm64-v8a" }
-        }
-        armeabi_v7a {
-            dimension "abi"
-            ndk { abiFilters "armeabi-v7a" }
-        }
-    }
-
-    sourceSets {
-        main {
-            python.srcDirs = ["src/main/python"]
-        }
+    compileOptions {
+        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 }
 
 dependencies {
-    implementation project(':catvod')
+    api "com.chaquo.python.runtime:chaquopy_java:${libs.versions.python.get()}@jar"
+    compileOnly project(':catvod')
+    coreLibraryDesugaring libs.desugar
 }

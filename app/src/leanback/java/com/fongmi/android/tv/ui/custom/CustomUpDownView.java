@@ -6,11 +6,11 @@ import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.widget.AppCompatTextView;
 
 import com.fongmi.android.tv.utils.KeyUtil;
+import com.google.android.material.textview.MaterialTextView;
 
-public class CustomUpDownView extends AppCompatTextView {
+public class CustomUpDownView extends MaterialTextView {
 
     private UpListener upListener;
     private DownListener downListener;
@@ -32,7 +32,7 @@ public class CustomUpDownView extends AppCompatTextView {
     }
 
     private boolean hasEvent(KeyEvent event) {
-        return event.getAction() == KeyEvent.ACTION_DOWN && ((upListener != null && KeyUtil.isUpKey(event)) || (downListener != null && KeyUtil.isDownKey(event)));
+        return KeyUtil.isActionDown(event) && ((upListener != null && KeyUtil.isUpKey(event)) || (downListener != null && KeyUtil.isDownKey(event)));
     }
 
     @Override

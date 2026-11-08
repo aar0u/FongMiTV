@@ -7,16 +7,12 @@ public class RefreshEvent {
     private final Type type;
     private String path;
 
-    public static void config() {
-        EventBus.getDefault().post(new RefreshEvent(Type.CONFIG));
+    public static void home() {
+        EventBus.getDefault().post(new RefreshEvent(Type.HOME));
     }
 
-    public static void image() {
-        EventBus.getDefault().post(new RefreshEvent(Type.IMAGE));
-    }
-
-    public static void video() {
-        EventBus.getDefault().post(new RefreshEvent(Type.VIDEO));
+    public static void category() {
+        EventBus.getDefault().post(new RefreshEvent(Type.CATEGORY));
     }
 
     public static void history() {
@@ -31,8 +27,8 @@ public class RefreshEvent {
         EventBus.getDefault().post(new RefreshEvent(Type.SIZE));
     }
 
-    public static void wall() {
-        EventBus.getDefault().post(new RefreshEvent(Type.WALL));
+    public static void theme() {
+        EventBus.getDefault().post(new RefreshEvent(Type.THEME));
     }
 
     public static void live() {
@@ -49,6 +45,10 @@ public class RefreshEvent {
 
     public static void subtitle(String path) {
         EventBus.getDefault().post(new RefreshEvent(Type.SUBTITLE, path));
+    }
+
+    public static void danmaku(String path) {
+        EventBus.getDefault().post(new RefreshEvent(Type.DANMAKU, path));
     }
 
     private RefreshEvent(Type type) {
@@ -69,6 +69,6 @@ public class RefreshEvent {
     }
 
     public enum Type {
-        CONFIG, IMAGE, VIDEO, HISTORY, KEEP, SIZE, WALL, LIVE, DETAIL, PLAYER, SUBTITLE
+        HOME, CATEGORY, HISTORY, KEEP, SIZE, THEME, LIVE, DETAIL, PLAYER, SUBTITLE, DANMAKU
     }
 }

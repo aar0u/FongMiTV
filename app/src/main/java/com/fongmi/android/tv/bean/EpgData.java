@@ -4,12 +4,15 @@ import android.text.TextUtils;
 
 import androidx.annotation.Nullable;
 
-import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.Formatters;
+import com.github.catvod.utils.Trans;
 import com.google.gson.annotations.SerializedName;
 
-import java.text.SimpleDateFormat;
-import java.util.Locale;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
+import java.util.Objects;
 
 public class EpgData {
 
@@ -77,44 +80,60 @@ public class EpgData {
     }
 
     public boolean isInRange() {
-        return getStartTime() <= System.currentTimeMillis() && System.currentTimeMillis() <= getEndTime();
+        return isInRange(System.currentTimeMillis());
+    }
+
+    boolean isInRange(long now) {
+        return getStartTime() <= now && now < getEndTime();
     }
 
     public boolean isFuture() {
         return getStartTime() > System.currentTimeMillis();
     }
 
-    public String format(String group) {
-        String pattern = group.split("\\)")[1].split("\\}")[0];
-        if (group.contains("(b")) return new SimpleDateFormat(pattern, Locale.getDefault()).format(getStartTime());
-        if (group.contains("(e")) return new SimpleDateFormat(pattern, Locale.getDefault()).format(getEndTime());
-        return "";
-    }
-
     public String format() {
         if (getTitle().isEmpty()) return "";
-        if (getStart().isEmpty() && getEnd().isEmpty()) return ResUtil.getString(R.string.play_now, getTitle());
-        return getStart() + " ~ " + getEnd() + "  " + getTitle();
+        if (getStart().isEmpty() && getEnd().isEmpty()) return getTitle();
+        return getTime() + "  " + getTitle();
     }
 
     public String getTime() {
         if (getStart().isEmpty() && getEnd().isEmpty()) return "";
-        return getStart() + " ~ " + getEnd();
+        return formatTime(getStart()) + " ~ " + formatTime(getEnd());
+    }
+
+    private static String formatTime(String time) {
+        if (time.isEmpty()) return time;
+        if (time.equals("24:00:00")) return "24:00";
+        try {
+            return LocalTime.parse(time).format(Formatters.TIME);
+        } catch (DateTimeParseException e) {
+            return time;
+        }
+    }
+
+    public String getRange() {
+        return "clock=" + Formatters.EPG_RANGE.format(Instant.ofEpochMilli(getStartTime())) + "-" + Formatters.EPG_RANGE.format(Instant.ofEpochMilli(getEndTime()));
+    }
+
+    public void checkDay(ZoneId zoneId) {
+        setEndTime(Instant.ofEpochMilli(getEndTime()).atZone(zoneId).plusDays(1).toInstant().toEpochMilli());
+    }
+
+    public void trans() {
+        if (Trans.pass()) return;
+        this.title = Trans.s2t(title);
     }
 
     @Override
     public boolean equals(@Nullable Object obj) {
         if (this == obj) return true;
-        if (!(obj instanceof EpgData)) return false;
-        EpgData it = (EpgData) obj;
-        return getTitle().equals(it.getTitle()) && getEnd().equals(it.getEnd()) && getStart().equals(it.getStart());
+        if (!(obj instanceof EpgData it)) return false;
+        return Objects.equals(getTitle(), it.getTitle()) && Objects.equals(getEnd(), it.getEnd()) && Objects.equals(getStart(), it.getStart());
     }
 
     @Override
     public int hashCode() {
-        int result = getTitle().hashCode();
-        result = 31 * result + getEnd().hashCode();
-        result = 31 * result + getStart().hashCode();
-        return result;
+        return Objects.hash(getTitle(), getEnd(), getStart());
     }
 }

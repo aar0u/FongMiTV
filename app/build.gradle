@@ -1,20 +1,27 @@
+import com.android.build.api.artifact.SingleArtifact
+import com.fongmi.gradle.AbiApkPackaging
+
 plugins {
-    id 'com.android.application'
+    alias libs.plugins.android.application
+}
+
+def localProps = new Properties()
+rootProject.file('local.properties').withInputStream {
+    localProps.load(it)
 }
 
 android {
-    namespace 'com.fongmi.android.tv'
+    namespace = 'com.fongmi.android.tv'
 
-    compileSdk 35
-    flavorDimensions = ["mode", "api", "abi"]
+    compileSdk libs.versions.compileSdk.get().toInteger()
 
     defaultConfig {
         applicationId "com.fongmi.android.tv"
-        minSdk 21
-        //noinspection ExpiredTargetSdkVersion
-        targetSdk 28
-        versionCode 274
-        versionName "2.7.4"
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+        versionCode 587
+        versionName "5.8.7"
+        manifestPlaceholders.runtimeCatalog = providers.gradleProperty('tvRuntimeCatalog').getOrElse('https://github.com/FongMi/Release/releases/download/module/catalog.json')
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString(), "eventBusIndex": "com.fongmi.android.tv.event.EventIndex"]
@@ -22,136 +29,110 @@ android {
         }
     }
 
+    flavorDimensions = ["device"]
+
     productFlavors {
         leanback {
-            dimension "mode"
+            dimension "device"
         }
         mobile {
-            dimension "mode"
+            dimension "device"
         }
-        java {
-            dimension "api"
-        }
-        python {
-            dimension "api"
-        }
-        x86 {
-            dimension "abi"
-            ndk { abiFilters "x86" }
-        }
-        arm64_v8a {
-            dimension "abi"
-            ndk { abiFilters "arm64-v8a" }
-        }
-        armeabi_v7a {
-            dimension "abi"
-            ndk { abiFilters "armeabi-v7a" }
+    }
+
+    splits {
+        abi {
+            enable = true
+            reset()
+            include "arm64-v8a", "armeabi-v7a"
+            universalApk = false
         }
     }
 
     buildFeatures {
-        buildConfig true
-        viewBinding true
+        buildConfig = true
+        viewBinding = true
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(localProps['storeFile'])
+            keyAlias localProps['keyAlias']
+            keyPassword localProps['storePassword']
+            storePassword localProps['storePassword']
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.release
+        }
         release {
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled = true
+            shrinkResources = true
+            signingConfig = signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
-    packagingOptions {
-        resources {
-            excludes += ['META-INF/beans.xml']
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
-    }
-
-    android.applicationVariants.configureEach { variant ->
-        variant.outputs.configureEach { output ->
-            outputFileName = "${variant.productFlavors[0].name}-${variant.productFlavors[1].name}-${variant.productFlavors[2].name}.apk"
-        }
-    }
-
     configurations.configureEach {
+        exclude group: 'stax', module: 'stax-api'
+        exclude group: 'xpp3', module: 'xpp3'
+        exclude group: 'com.android.support'
         resolutionStrategy {
-            force 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+            force libs.okhttp
         }
     }
 
     lint {
         disable 'UnsafeOptInUsageError'
+        disable 'ExpiredTargetSdkVersion'
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 }
 
+AbiApkPackaging.configure(project, SingleArtifact.APK.INSTANCE)
+
 dependencies {
+    implementation fileTree(dir: "libs", include: ["*.aar"])
     implementation project(':catvod')
-    implementation project(':quickjs')
-    pythonImplementation project(':chaquo')
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.media:media:1.7.0'
-    implementation 'androidx.media3:media3-common:' + media3Version
-    implementation 'androidx.media3:media3-container:' + media3Version
-    implementation 'androidx.media3:media3-database:' + media3Version
-    implementation 'androidx.media3:media3-datasource:' + media3Version
-    implementation 'androidx.media3:media3-datasource-okhttp:' + media3Version
-    implementation 'androidx.media3:media3-datasource-rtmp:' + media3Version
-    implementation 'androidx.media3:media3-decoder:' + media3Version
-    implementation 'androidx.media3:media3-exoplayer:' + media3Version
-    implementation 'androidx.media3:media3-exoplayer-dash:' + media3Version
-    implementation 'androidx.media3:media3-exoplayer-hls:' + media3Version
-    implementation 'androidx.media3:media3-exoplayer-rtsp:' + media3Version
-    implementation 'androidx.media3:media3-exoplayer-smoothstreaming:' + media3Version
-    implementation 'androidx.media3:media3-extractor:' + media3Version
-    implementation 'androidx.media3:media3-ui:' + media3Version
-    implementation 'androidx.room:room-runtime:2.6.1'
-    implementation 'cat.ereza:customactivityoncrash:2.4.0'
-    implementation 'com.github.bassaer:materialdesigncolors:1.0.0'
-    implementation 'com.github.bumptech.glide:glide:4.16.0'
-    implementation 'com.github.bumptech.glide:annotations:4.16.0'
-    implementation 'com.github.bumptech.glide:okhttp3-integration:4.16.0'
-    implementation 'com.github.jahirfiquitiva:TextDrawable:1.0.3'
-    implementation 'com.github.thegrizzlylabs:sardine-android:0.9'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'com.google.net.cronet:cronet-okhttp:0.1.0'
-    implementation 'com.google.zxing:core:3.3.0'
-    implementation 'com.guolindev.permissionx:permissionx:1.8.0'
-    implementation 'com.hierynomus:smbj:0.14.0'
-    implementation 'io.antmedia:rtmp-client:3.2.0'
-    implementation 'javax.servlet:javax.servlet-api:3.1.0'
-    implementation 'net.java.dev.jna:jna:5.2.0'
-    implementation 'org.chromium.net:cronet-embedded:76.3809.111'
-    implementation 'org.eclipse.jetty:jetty-client:8.1.22.v20160922'
-    implementation('org.eclipse.jetty:jetty-server:8.1.22.v20160922') { exclude group: 'org.eclipse.jetty.orbit', module: 'javax.servlet' }
-    implementation('org.eclipse.jetty:jetty-servlet:8.1.22.v20160922') { exclude group: 'org.eclipse.jetty.orbit', module: 'javax.servlet' }
-    implementation 'org.fourthline.cling:cling-core:2.1.2-SNAPSHOT'
-    implementation 'org.fourthline.cling:cling-support:2.1.2-SNAPSHOT'
-    implementation 'org.greenrobot:eventbus:3.3.1'
-    implementation('org.simpleframework:simple-xml:2.7.1') { exclude group: 'stax', module: 'stax-api' exclude group: 'xpp3', module: 'xpp3' }
-    implementation(ext: 'aar', name: 'dlna-core-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'dlna-dmc-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'dlna-dmr-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'forcetech-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'hook-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'jianpian-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'nanohttpd-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'thunder-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'tvbus-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'youtube-release', group: 'fongmi', version: 'release')
-    implementation(ext: 'aar', name: 'zlive-release', group: 'fongmi', version: 'release')
-    leanbackImplementation 'androidx.leanback:leanback:1.2.0-alpha04'
-    leanbackImplementation 'com.github.JessYanCoding:AndroidAutoSize:1.2.1'
-    mobileImplementation 'androidx.biometric:biometric:1.1.0'
-    mobileImplementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-    mobileImplementation 'com.google.android.flexbox:flexbox:3.0.0'
-    mobileImplementation('com.journeyapps:zxing-android-embedded:4.3.0') { transitive = false }
-    annotationProcessor 'androidx.room:room-compiler:2.6.1'
-    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
-    annotationProcessor 'org.greenrobot:eventbus-annotation-processor:3.3.1'
+    implementation libs.appcompat
+    implementation libs.lifecycle.service
+    implementation libs.media
+    implementation libs.palette
+    implementation libs.recyclerview
+    implementation libs.room.runtime
+    implementation libs.splashscreen
+    implementation libs.swiperefreshlayout
+    implementation libs.viewpager2
+    implementation libs.android.gif.drawable
+    implementation libs.bundles.glide
+    implementation libs.bundles.jupnp
+    implementation libs.customactivityoncrash
+    implementation libs.eventbus
+    implementation libs.flexbox
+    implementation libs.rtmp.client
+    implementation libs.lottie
+    implementation libs.material
+    implementation libs.materialdesigncolors
+    implementation libs.nanohttpd
+    implementation libs.newpipeextractor
+    implementation libs.permissionx
+    implementation libs.simple.xml
+    implementation libs.textdrawable
+    leanbackImplementation libs.leanback
+    leanbackImplementation libs.androidautosize
+    mobileImplementation libs.biometric
+    mobileImplementation libs.zxing.android.embedded
+    annotationProcessor libs.room.compiler
+    annotationProcessor libs.eventbus.annotation.processor
+    annotationProcessor libs.glide.compiler
+    coreLibraryDesugaring libs.desugar
 }
+
+if (file('test.gradle').isFile()) apply from: 'test.gradle'

@@ -1,174 +1,24 @@
-# 影視
+# 影視TV
 
-### 基於 CatVod 項目
+Android TV、手機、平板都能用，支援本地檔案與網址播放。
 
-https://github.com/CatVodTVOfficial/CatVodTVJarLoader
+[使用指南](https://fongmi.github.io/TV) · [討論群組](https://t.me/fongmi_official)
 
-### 點播欄位
+## 主要功能
 
-| 欄位名稱       | 預設值  | 說明   | 其他         |
-|------------|------|------|------------|
-| searchable | 1    | 是否搜索 | 0：關閉；1：啟用  |
-| changeable | 1    | 是否換源 | 0：關閉；1：啟用  |
-| timeout    | 15   | 播放超時 | 單位：秒       |
-| header     | none | 請求標頭 | 格式：json    |
-| click      | none | 點擊js | javascript |
+- **瀏覽**：分類篩選、跨站搜尋、收藏、播放記錄與無痕模式。
+- **播放**：倍速、字幕、彈幕、片段跳過、畫中畫與背景音訊。
+- **直播**：分組選台、節目表、頻道收藏與線路切換。
+- **操作**：電視遙控器、手機手勢、DLNA 投放與接收。
+- **互通**：網頁遙控、檔案傳輸、記錄同步與 Android Auto。
 
-### 直播欄位
+爬蟲開發說明與 Java、Python、QuickJS 範例見 [CatVodSpider](https://github.com/FongMi/CatVodSpider)。
 
-| 欄位名稱     | 預設值   | 說明    | 其他         |
-|----------|-------|-------|------------|
-| ua       | none  | 用戶代理  |            |
-| origin   | none  | 來源    |            |
-| referer  | none  | 參照地址  |            |
-| epg      | none  | 節目地址  |            |
-| logo     | none  | 台標地址  |            |
-| pass     | false | 是否免密碼 |            |
-| boot     | false | 是否自啟動 |            |
-| timeout  | 15    | 播放超時  | 單位：秒       |
-| header   | none  | 請求標頭  | 格式：json    |
-| click    | none  | 點擊js  | javascript |
-| catchup  | none  | 回看參數  |            |
-| timeZone | none  | 時區    |            |
+## Star History
 
-### 樣式
-
-| 欄位名稱  | 值    | 說明  |
-|-------|------|-----|
-| type  | rect | 矩形  |
-|       | oval | 橢圓  |
-|       | list | 列表  |
-| ratio | 0.75 | 3：4 |
-|       | 1.33 | 4：3 |
-
-直式
-
-```json
-{
-  "style": {
-    "type": "rect"
-  }
-}
-```
-
-橫式
-
-```json
-{
-  "style": {
-    "type": "rect",
-    "ratio": 1.33
-  }
-}
-```
-
-正方
-
-```json
-{
-  "style": {
-    "type": "rect",
-    "ratio": 1
-  }
-}
-```
-
-正圓
-
-```json
-{
-  "style": {
-    "type": "oval"
-  }
-}
-```
-
-橢圓
-
-```json
-{
-  "style": {
-    "type": "oval",
-    "ratio": 1.1
-  }
-}
-```
-
-### API
-
-刷新詳情
-
-```
-http://127.0.0.1:9978/action?do=refresh&type=detail
-```
-
-刷新播放
-
-```
-http://127.0.0.1:9978/action?do=refresh&type=player
-```
-
-刷新直播
-
-```
-http://127.0.0.1:9978/action?do=refresh&type=live
-```
-
-推送字幕
-
-```
-http://127.0.0.1:9978/action?do=refresh&type=subtitle&path=http://xxx
-```
-
-新增緩存字串
-
-```
-http://127.0.0.1:9978/cache?do=set&key=xxx&value=xxx
-```
-
-取得緩存字串
-
-```
-http://127.0.0.1:9978/cache?do=get&key=xxx
-```
-
-刪除緩存字串
-
-```
-http://127.0.0.1:9978/cache?do=del&key=xxx
-```
-
-### Proxy
-
-scheme 支持 http, https, socks4, socks5
-
-```
-scheme://username:password@host:port
-```
-
-配置 rules 新增 proxy 判斷 host 是否走代理
-
-```json
-{
-  "name": "proxy",
-  "hosts": [
-    "api.nivodz.com"
-  ]
-}
-```
-
-### 配置範例
-
-[點播-線上](other/sample/vod/online.json)  
-[點播-本地](other/sample/vod/offline.json)  
-[直播-線上](other/sample/live/online.json)  
-[直播-本地](other/sample/live/offline.json)
-
-### 飛機群
-
-[討論群組](https://t.me/fongmi_offical)  
-[發布頻道](https://t.me/fongmi_release)
-
-### 贊助
-
-![photo_2024-01-10_11-39-12](https://github.com/FongMi/TV/assets/3471963/fdc12771-386c-4d5d-9a4d-d0bec0276fa7)
+<a href="https://www.star-history.com/?repos=FongMi%2FTV&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=FongMi/TV&amp;type=date&amp;theme=dark" />
+    <img alt="FongMi/TV Star History" src="https://api.star-history.com/chart?repos=FongMi/TV&amp;type=date" />
+  </picture>
+</a>

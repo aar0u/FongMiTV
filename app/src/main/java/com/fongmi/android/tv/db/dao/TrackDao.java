@@ -12,7 +12,7 @@ import java.util.List;
 @Dao
 public abstract class TrackDao extends BaseDao<Track> {
 
-    @Query("SELECT * FROM Track WHERE `key` = :key and type = 3")
+    @Query("SELECT * FROM Track WHERE `key` = :key")
     public abstract List<Track> find(String key);
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -20,4 +20,7 @@ public abstract class TrackDao extends BaseDao<Track> {
 
     @Query("DELETE FROM Track WHERE `key` = :key")
     public abstract void delete(String key);
+
+    @Query("DELETE FROM Track WHERE `key` = :key AND `type` = :type AND `role` = :role")
+    public abstract void delete(String key, int type, int role);
 }

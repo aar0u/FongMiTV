@@ -1,31 +1,55 @@
 package com.fongmi.android.tv.bean;
 
-import androidx.annotation.NonNull;
-import androidx.media3.common.C;
+import android.text.TextUtils;
+
 import androidx.room.Entity;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
 import com.fongmi.android.tv.db.AppDatabase;
 
+import java.util.Collections;
 import java.util.List;
 
-@Entity(indices = @Index(value = {"key", "type"}, unique = true))
+@Entity(indices = @Index(value = {"key", "type", "role"}, unique = true))
 public class Track {
+
+    public static final int ROLE_PRIMARY = 0;
+    public static final int ROLE_SECONDARY = 1;
 
     @PrimaryKey(autoGenerate = true)
     private int id;
     private int type;
-    private int group;
-    private int track;
+    private int role;
+    private int ordinal;
     private String key;
     private String name;
+    private String format;
+    private String label;
+    private String language;
+    private String mimeType;
     private boolean selected;
-    private boolean adaptive;
 
-    public Track(int type, String name) {
+    public Track(int type, String name, String format) {
         this.type = type;
         this.name = name;
+        this.format = format;
+        this.role = ROLE_PRIMARY;
+        this.ordinal = -1;
+    }
+
+    public static List<Track> find(String key) {
+        return TextUtils.isEmpty(key) ? Collections.emptyList() : AppDatabase.get().getTrackDao().find(key);
+    }
+
+    public static void delete(String key) {
+        if (TextUtils.isEmpty(key)) return;
+        AppDatabase.get().getTrackDao().delete(key);
+    }
+
+    public static void delete(String key, int type, int role) {
+        if (TextUtils.isEmpty(key)) return;
+        AppDatabase.get().getTrackDao().delete(key, type, role);
     }
 
     public int getId() {
@@ -44,27 +68,27 @@ public class Track {
         this.type = type;
     }
 
-    public int getGroup() {
-        return group;
+    public int getRole() {
+        return role;
     }
 
-    public void setGroup(int group) {
-        this.group = group;
+    public void setRole(int role) {
+        this.role = role;
     }
 
-    public int getTrack() {
-        return track;
+    public int getOrdinal() {
+        return ordinal;
     }
 
-    public void setTrack(int track) {
-        this.track = track;
+    public void setOrdinal(int ordinal) {
+        this.ordinal = ordinal;
     }
 
     public String getKey() {
         return key;
     }
 
-    public void setKey(@NonNull String key) {
+    public void setKey(String key) {
         this.key = key;
     }
 
@@ -76,6 +100,38 @@ public class Track {
         this.name = name;
     }
 
+    public String getFormat() {
+        return format;
+    }
+
+    public void setFormat(String format) {
+        this.format = format;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setLabel(String label) {
+        this.label = label;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public String getMimeType() {
+        return mimeType;
+    }
+
+    public void setMimeType(String mimeType) {
+        this.mimeType = mimeType;
+    }
+
     public boolean isSelected() {
         return selected;
     }
@@ -84,12 +140,13 @@ public class Track {
         this.selected = selected;
     }
 
-    public boolean isAdaptive() {
-        return adaptive;
+    public Track key(String key) {
+        setKey(key);
+        return this;
     }
 
-    public void setAdaptive(boolean adaptive) {
-        this.adaptive = adaptive;
+    public boolean isSecondary() {
+        return role == ROLE_SECONDARY;
     }
 
     public Track toggle() {
@@ -97,16 +154,9 @@ public class Track {
         return this;
     }
 
-    public void save() {
-        if (getType() != C.TRACK_TYPE_TEXT) return;
+    public Track save() {
+        if (TextUtils.isEmpty(getKey())) return this;
         AppDatabase.get().getTrackDao().insert(this);
-    }
-
-    public static List<Track> find(String key) {
-        return AppDatabase.get().getTrackDao().find(key);
-    }
-
-    public static void delete(String key) {
-        AppDatabase.get().getTrackDao().delete(key);
+        return this;
     }
 }

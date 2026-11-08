@@ -9,12 +9,16 @@ import android.view.LayoutInflater;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
-import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationChannelCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.ViewProgressBinding;
+import com.fongmi.android.tv.exception.ExtractException;
+import com.fongmi.android.tv.exception.SpiderLoadException;
+import com.github.catvod.utils.RuntimeModule;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class Notify {
@@ -38,12 +42,25 @@ public class Notify {
     }
 
     public static String getError(int resId, Throwable e) {
+        String message = getError(e);
+        if (message != null) return message;
         if (TextUtils.isEmpty(e.getMessage())) return ResUtil.getString(resId);
         return ResUtil.getString(resId) + "\n" + e.getMessage();
     }
 
+    public static String getError(Throwable e) {
+        RuntimeModule.MissingException missing = RuntimeModule.MissingException.find(e);
+        if (missing != null) {
+            String title = missing.module == RuntimeModule.THUNDER ? ResUtil.getString(R.string.module_thunder) : missing.module.title;
+            return ResUtil.getString(R.string.error_module_missing, title);
+        }
+        for (Throwable current = e; current != null; current = current.getCause()) if (current instanceof ExtractException) return current.getMessage();
+        for (Throwable current = e; current != null; current = current.getCause()) if (current instanceof SpiderLoadException) return ResUtil.getString(R.string.error_spider_load);
+        return null;
+    }
+
     public static void show(Notification notification) {
-        if (ActivityCompat.checkSelfPermission(App.get(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        if (ContextCompat.checkSelfPermission(App.get(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
         NotificationManagerCompat.from(App.get()).notify(ID, notification);
     }
 
@@ -52,7 +69,7 @@ public class Notify {
     }
 
     public static void show(String text) {
-        get().makeText(text);
+        if (!TextUtils.isEmpty(text)) get().makeText(text);
     }
 
     public static void progress(Context context) {
@@ -74,10 +91,9 @@ public class Notify {
         mDialog.show();
     }
 
-    private void makeText(String message) {
+    private void makeText(String text) {
         if (mToast != null) mToast.cancel();
-        if (TextUtils.isEmpty(message)) return;
-        mToast = Toast.makeText(App.get(), message, Toast.LENGTH_LONG);
+        mToast = Toast.makeText(App.get(), text, Toast.LENGTH_LONG);
         mToast.show();
     }
 }

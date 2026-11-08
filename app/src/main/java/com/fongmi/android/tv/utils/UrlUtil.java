@@ -1,55 +1,48 @@
 package com.fongmi.android.tv.utils;
 
+import android.content.ContentResolver;
 import android.net.Uri;
+import android.text.TextUtils;
 
 import com.fongmi.android.tv.server.Server;
+import com.github.catvod.utils.Path;
 import com.github.catvod.utils.UriUtil;
 import com.google.common.net.HttpHeaders;
 
+import java.io.File;
+
 public class UrlUtil {
 
-    public static Uri uri(String url) {
-        return Uri.parse(url.trim().replace("\\", ""));
+    private static final String WEBVIEW_PREFIX = "webview://";
+
+    public static boolean isWebView(String url) {
+        return url != null && url.regionMatches(true, 0, WEBVIEW_PREFIX, 0, WEBVIEW_PREFIX.length());
     }
 
-    public static String scheme(String url) {
-        return url == null ? "" : scheme(Uri.parse(url));
+    public static String unwrapWebView(String url) {
+        return isWebView(url) ? url.substring(WEBVIEW_PREFIX.length()) : "";
     }
 
-    public static String scheme(Uri uri) {
-        String scheme = uri.getScheme();
-        return scheme == null ? "" : scheme.toLowerCase().trim();
-    }
-
-    public static String host(String url) {
-        return url == null ? "" : host(Uri.parse(url));
-    }
-
-    public static String host(Uri uri) {
-        String host = uri.getHost();
-        return host == null ? "" : host.toLowerCase().trim();
-    }
-
-    public static String path(Uri uri) {
+    public static String toLocalUrl(Uri uri) {
         String path = uri.getPath();
-        return path == null ? "" : path.trim();
-    }
-
-    public static String resolve(String baseUri, String referenceUri) {
-        return UriUtil.resolve(baseUri, referenceUri);
+        String root = Path.rootPath();
+        if (!ContentResolver.SCHEME_FILE.equalsIgnoreCase(uri.getScheme()) || TextUtils.isEmpty(path) || !path.startsWith(root + File.separator)) return uri.toString();
+        return "file://" + path.substring(root.length() + 1);
     }
 
     public static String convert(String url) {
-        String scheme = scheme(url);
-        if ("local".equals(scheme)) return url.replace("local://", Server.get().getAddress("/"));
-        if ("assets".equals(scheme)) return url.replace("assets://", Server.get().getAddress("/"));
-        if ("file".equals(scheme)) return url.replace("file://", Server.get().getAddress("/file/"));
-        if ("proxy".equals(scheme)) return url.replace("proxy://", Server.get().getAddress("/proxy?"));
-        return url;
+        String scheme = UriUtil.scheme(url);
+        String prefix = scheme + "://";
+        return switch (scheme) {
+            case "assets" -> url.replace(prefix, Server.get().getAddress("/"));
+            case "proxy" -> url.replace(prefix, Server.get().getAddress("/proxy?"));
+            case "file" -> Server.get().getAddress("/file/") + Uri.encode(url.substring((prefix).length()), "/");
+            default -> url;
+        };
     }
 
     public static String fixHeader(String key) {
-        if (HttpHeaders.USER_AGENT.equalsIgnoreCase(key)) return HttpHeaders.USER_AGENT;
+        if (HttpHeaders.USER_AGENT.equalsIgnoreCase(key) || "ua".equalsIgnoreCase(key)) return HttpHeaders.USER_AGENT;
         if (HttpHeaders.REFERER.equalsIgnoreCase(key)) return HttpHeaders.REFERER;
         if (HttpHeaders.COOKIE.equalsIgnoreCase(key)) return HttpHeaders.COOKIE;
         return key;

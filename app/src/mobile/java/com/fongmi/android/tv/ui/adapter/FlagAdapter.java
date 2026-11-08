@@ -6,21 +6,19 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.databinding.AdapterFlagBinding;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
 
-    private final OnClickListener mListener;
+    private final OnClickListener listener;
     private final List<Flag> mItems;
 
     public FlagAdapter(OnClickListener listener) {
-        this.mListener = listener;
+        this.listener = listener;
         this.mItems = new ArrayList<>();
     }
 
@@ -36,30 +34,12 @@ public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
     }
 
     public int getPosition() {
-        for (int i = 0; i < mItems.size(); i++) if (mItems.get(i).isActivated()) return i;
+        for (int i = 0; i < mItems.size(); i++) if (mItems.get(i).isSelected()) return i;
         return 0;
     }
 
     public Flag get(int position) {
         return mItems.get(position);
-    }
-
-    public Flag getActivated() {
-        return mItems.get(getPosition());
-    }
-
-    public void setActivated(Flag flag) {
-        if (!mItems.contains(flag)) flag.setFlag(mItems.get(0).getFlag());
-        for (Flag item : mItems) item.setActivated(flag);
-        notifyItemRangeChanged(0, getItemCount());
-    }
-
-    public void toggle(Episode episode) {
-        for (Flag item : mItems) item.toggle(item.isActivated(), episode);
-    }
-
-    public void reverse() {
-        for (Flag item : mItems) Collections.reverse(item.getEpisodes());
     }
 
     public boolean isEmpty() {
@@ -81,11 +61,11 @@ public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Flag item = mItems.get(position);
         holder.binding.text.setText(item.getShow());
-        holder.binding.text.setActivated(item.isActivated());
-        holder.binding.text.setOnClickListener(v -> mListener.onItemClick(item));
+        holder.binding.text.setSelected(item.isSelected());
+        holder.binding.text.setOnClickListener(v -> listener.onItemClick(item));
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
+    public class ViewHolder extends RecyclerView.ViewHolder {
 
         private final AdapterFlagBinding binding;
 

@@ -1,35 +1,30 @@
 package com.fongmi.android.tv.ui.dialog;
 
 import android.view.LayoutInflater;
-import android.view.WindowManager;
+import android.view.ViewGroup;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
-import androidx.lifecycle.ViewModelProvider;
+import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.databinding.DialogEpisodeListBinding;
-import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
 import com.fongmi.android.tv.ui.base.ViewType;
-import com.google.android.material.sidesheet.SideSheetDialog;
+import com.fongmi.android.tv.utils.ResUtil;
 
 import java.util.List;
 
-public class EpisodeListDialog implements EpisodeAdapter.OnClickListener {
+public class EpisodeListDialog extends BaseSideSheetDialog implements EpisodeAdapter.OnClickListener {
 
-    private final FragmentActivity activity;
     private DialogEpisodeListBinding binding;
-    private List<Episode> episodes;
-    private SiteViewModel viewModel;
     private EpisodeAdapter adapter;
-    private SideSheetDialog dialog;
+    private List<Episode> episodes;
 
-    public static EpisodeListDialog create(FragmentActivity activity) {
-        return new EpisodeListDialog(activity);
-    }
-
-    public EpisodeListDialog(FragmentActivity activity) {
-        this.activity = activity;
+    public static EpisodeListDialog create() {
+        return new EpisodeListDialog();
     }
 
     public EpisodeListDialog episodes(List<Episode> episodes) {
@@ -37,25 +32,29 @@ public class EpisodeListDialog implements EpisodeAdapter.OnClickListener {
         return this;
     }
 
-    public SideSheetDialog show() {
-        initDialog();
-        initView();
-        return dialog;
+    public void show(FragmentActivity activity) {
+        for (Fragment f : activity.getSupportFragmentManager().getFragments()) if (f instanceof EpisodeListDialog) return;
+        show(activity.getSupportFragmentManager(), null);
     }
 
-    private void initDialog() {
-        binding = DialogEpisodeListBinding.inflate(LayoutInflater.from(activity));
-        dialog = new SideSheetDialog(activity);
-        dialog.setContentView(binding.getRoot());
-        dialog.getBehavior().setDraggable(false);
-        dialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        dialog.show();
+    @Override
+    protected ViewBinding getBinding(@NonNull LayoutInflater inflater, @Nullable ViewGroup container) {
+        return binding = DialogEpisodeListBinding.inflate(inflater, container, false);
     }
 
-    private void initView() {
+    @Override
+    protected int getWidth() {
+        int minWidth = ResUtil.dp2px(200);
+        int maxWidth = ResUtil.getScreenWidth() / 3;
+        for (Episode item : episodes) minWidth = Math.max(minWidth, ResUtil.getTextWidth(item.getName(), 14));
+        return Math.min(minWidth, maxWidth);
+    }
+
+    @Override
+    protected void initView() {
         setRecyclerView();
-        setViewModel();
-        setEpisode();
+        adapter.addAll(episodes);
+        binding.recycler.scrollToPosition(adapter.getPosition());
     }
 
     private void setRecyclerView() {
@@ -64,17 +63,9 @@ public class EpisodeListDialog implements EpisodeAdapter.OnClickListener {
         binding.recycler.setAdapter(adapter = new EpisodeAdapter(this, ViewType.GRID));
     }
 
-    private void setViewModel() {
-        viewModel = new ViewModelProvider(activity).get(SiteViewModel.class);
-    }
-
-    private void setEpisode() {
-        adapter.addAll(episodes);
-        binding.recycler.scrollToPosition(adapter.getPosition());
-    }
-
     @Override
     public void onItemClick(Episode item) {
-        viewModel.setEpisode(item);
+        ((EpisodeAdapter.OnClickListener) requireActivity()).onItemClick(item);
+        dismiss();
     }
 }

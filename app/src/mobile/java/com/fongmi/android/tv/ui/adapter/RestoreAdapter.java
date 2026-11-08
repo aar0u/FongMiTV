@@ -6,35 +6,24 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.databinding.AdapterRestoreBinding;
-import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.db.BackupManager;
+import com.fongmi.android.tv.utils.Formatters;
 import com.github.catvod.utils.Path;
 
 import java.io.File;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 public class RestoreAdapter extends RecyclerView.Adapter<RestoreAdapter.ViewHolder> {
 
-    private final OnClickListener mListener;
-    private final SimpleDateFormat format;
+    private final OnClickListener listener;
     private final List<File> mItems;
 
-    private final Callback callback = new Callback() {
-        @Override
-        public void success() {
-            notifyDataSetChanged();
-        }
-    };
-
     public RestoreAdapter(OnClickListener listener) {
-        this.format = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
         this.mItems = new ArrayList<>();
-        this.mListener = listener;
+        this.listener = listener;
         this.addAll();
     }
 
@@ -46,21 +35,17 @@ public class RestoreAdapter extends RecyclerView.Adapter<RestoreAdapter.ViewHold
     }
 
     private void addAll() {
-        App.execute(() -> {
-            File[] files = Path.tv().listFiles();
-            if (files == null || files.length == 0) return;
-            for (File file : files) if (file.getName().startsWith("tv") && file.getName().endsWith(".bk.gz")) mItems.add(file);
-            Collections.sort(mItems, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
-            callback.success();
-        });
+        mItems.addAll(BackupManager.getFiles());
+        notifyDataSetChanged();
     }
 
-    public void remove(File item) {
+    public int remove(File item) {
         int position = mItems.indexOf(item);
-        if (position == -1) return;
+        if (position == -1) return -1;
         Path.clear(item);
         mItems.remove(position);
         notifyItemRemoved(position);
+        return getItemCount();
     }
 
     @Override
@@ -78,12 +63,12 @@ public class RestoreAdapter extends RecyclerView.Adapter<RestoreAdapter.ViewHold
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         File item = mItems.get(position);
         holder.binding.name.setText(item.getName());
-        holder.binding.time.setText(format.format(item.lastModified()));
-        holder.binding.delete.setOnClickListener(v -> mListener.onDeleteClick(item));
-        holder.binding.getRoot().setOnClickListener(v -> mListener.onItemClick(item));
+        holder.binding.time.setText(Formatters.TIME_SEC.format(Instant.ofEpochMilli(item.lastModified())));
+        holder.binding.delete.setOnClickListener(v -> listener.onDeleteClick(item));
+        holder.binding.getRoot().setOnClickListener(v -> listener.onItemClick(item));
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
+    public class ViewHolder extends RecyclerView.ViewHolder {
 
         private final AdapterRestoreBinding binding;
 

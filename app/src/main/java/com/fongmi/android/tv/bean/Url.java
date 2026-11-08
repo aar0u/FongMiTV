@@ -1,10 +1,12 @@
 package com.fongmi.android.tv.bean;
 
+import android.net.Uri;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.google.gson.JsonElement;
 import com.google.gson.annotations.SerializedName;
+import com.github.catvod.utils.UriUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +38,10 @@ public class Url {
         return position;
     }
 
+    public Uri uri() {
+        return UriUtil.uri(v());
+    }
+
     public String v() {
         return v(getPosition());
     }
@@ -49,17 +55,18 @@ public class Url {
     }
 
     public Url add(String v) {
-        getValues().add(new Value("", v));
+        getValues().add(Value.create(v));
         return this;
     }
 
     public Url add(String n, String v) {
-        getValues().add(new Value(n, v));
+        getValues().add(Value.create(n, v));
         return this;
     }
 
     public Url replace(String url) {
-        getValues().get(getPosition()).setV(url);
+        if (getValues().isEmpty()) add(url);
+        else getValues().get(getPosition()).setV(url);
         return this;
     }
 

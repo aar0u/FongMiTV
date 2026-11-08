@@ -1,18 +1,28 @@
 plugins {
-    id 'com.android.library'
+    alias libs.plugins.android.library
 }
 
 android {
-    namespace 'com.ghost.thunder'
+    namespace = 'com.ghost.thunder'
 
-    compileSdk 35
+    compileSdk libs.versions.compileSdk.get().toInteger()
 
     defaultConfig {
-        minSdk 21
-        targetSdk 28
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+        consumerProguardFiles 'consumer-rules.pro'
     }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    packaging.jniLibs.keepDebugSymbols.add('**/*.so')
 }
 
 dependencies {
-    implementation project(':catvod')
+    compileOnly project(':catvod')
+    coreLibraryDesugaring libs.desugar
 }

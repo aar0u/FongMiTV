@@ -1,170 +1,154 @@
 package com.fongmi.android.tv.model;
 
+import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
+import androidx.media3.common.C;
 
 import com.fongmi.android.tv.Constant;
-import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.EpgParser;
-import com.fongmi.android.tv.api.LiveParser;
-import com.fongmi.android.tv.api.config.LiveConfig;
+import com.fongmi.android.tv.api.LiveApi;
 import com.fongmi.android.tv.bean.Channel;
 import com.fongmi.android.tv.bean.Epg;
-import com.fongmi.android.tv.bean.EpgData;
-import com.fongmi.android.tv.bean.Group;
 import com.fongmi.android.tv.bean.Live;
-import com.fongmi.android.tv.exception.ExtractException;
-import com.fongmi.android.tv.player.Source;
-import com.github.catvod.net.OkHttp;
+import com.fongmi.android.tv.bean.Result;
+import com.fongmi.android.tv.playback.PlaybackResult;
+import com.fongmi.android.tv.playback.live.LiveDataSource;
+import com.fongmi.android.tv.playback.live.LivePlayRequest;
+import com.fongmi.android.tv.playback.live.LivePlaybackController;
+import com.fongmi.android.tv.playback.live.LivePlaybackHost;
+import com.fongmi.android.tv.playback.live.LivePlaybackState;
+import com.fongmi.android.tv.utils.Notify;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.Locale;
-import java.util.TimeZone;
+import java.time.ZoneId;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
-public class LiveViewModel extends ViewModel {
+public class LiveViewModel extends ViewModel implements LiveDataSource {
 
-    private static final int LIVE = 0;
-    private static final int EPG = 1;
-    private static final int URL = 2;
-    private static final int XML = 3;
+    private final MutableLiveData<PlaybackResult<LivePlayRequest>> playback;
+    private final MutableLiveData<String> error;
+    private final MutableLiveData<Boolean> xml;
+    private final MutableLiveData<Live> live;
+    private final MutableLiveData<Epg> epg;
 
-    private final SimpleDateFormat formatDate;
-    private final SimpleDateFormat formatTime;
-
-    public MutableLiveData<Channel> url;
-    public MutableLiveData<Boolean> xml;
-    public MutableLiveData<Live> live;
-    public MutableLiveData<Epg> epg;
-
-    private ExecutorService executor1;
-    private ExecutorService executor2;
-    private ExecutorService executor3;
-    private ExecutorService executor4;
+    private final ViewModelTaskRunner<TaskType> tasks;
+    private final LivePlaybackState playbackState;
+    private volatile ZoneId zoneId;
 
     public LiveViewModel() {
-        this.formatTime = new SimpleDateFormat("yyyy-MM-ddHH:mm", Locale.getDefault());
-        this.formatDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-        this.live = new MutableLiveData<>();
         this.epg = new MutableLiveData<>();
-        this.url = new MutableLiveData<>();
         this.xml = new MutableLiveData<>();
+        this.live = new MutableLiveData<>();
+        this.error = new MutableLiveData<>();
+        this.playback = new MutableLiveData<>();
+        this.playbackState = new LivePlaybackState();
+        this.tasks = new ViewModelTaskRunner<>(TaskType.class);
+        this.zoneId = ZoneId.systemDefault();
     }
 
-    public void getLive(Live item) {
-        execute(LIVE, () -> {
-            LiveParser.start(item.recent());
-            setTimeZone(item);
-            verify(item);
+    public LiveData<PlaybackResult<LivePlayRequest>> playback() {
+        return playback;
+    }
+
+    public LiveData<String> error() {
+        return error;
+    }
+
+    public LiveData<Boolean> xml() {
+        return xml;
+    }
+
+    public LiveData<Epg> epg() {
+        return epg;
+    }
+
+    public LiveData<Live> live() {
+        return live;
+    }
+
+    public ZoneId getZoneId() {
+        return zoneId;
+    }
+
+    public LivePlaybackController createPlaybackController(LivePlaybackHost host) {
+        return new LivePlaybackController(host, this, playbackState);
+    }
+
+    public void parse(Live item) {
+        error.setValue(null);
+        execute(TaskType.LIVE, () -> {
+            LiveApi.parse(item);
             return item;
-        });
+        }, result -> {
+            setTimeZone(result);
+            live.postValue(result);
+        }, this::handleParseError);
     }
 
-    public void getXml(Live item) {
-        execute(XML, () -> {
-            boolean result = false;
-            for (String url : item.getEpg().split(",")) if (EpgParser.start(item, url)) result = true;
-            return result;
-        });
+    public void parseXml(Live item) {
+        execute(TaskType.XML, () -> LiveApi.parseXml(item), xml::postValue, error -> xml.postValue(false));
     }
 
     public void getEpg(Channel item) {
-        String date = formatDate.format(new Date());
-        String url = item.getEpg().replace("{date}", date);
-        execute(EPG, () -> {
-            if (!item.getData().equal(date)) item.setData(Epg.objectFrom(OkHttp.string(url), item.getTvgName(), formatTime));
-            return item.getData().selected();
-        });
+        execute(TaskType.EPG, () -> LiveApi.getEpg(item, zoneId), epg::postValue, error -> epg.postValue(new Epg()));
     }
 
-    public void getUrl(Channel item) {
-        execute(URL, () -> {
-            item.setMsg(null);
-            Source.get().stop();
-            item.setUrl(Source.get().fetch(item));
-            return item;
-        });
+    @Override
+    public void getUrl(LivePlayRequest request) {
+        execute(TaskType.URL, () -> getUrlResult(request), result -> postUrl(request, result), error -> handleUrlError(request, error));
     }
 
-    public void getUrl(Channel item, EpgData data) {
-        execute(URL, () -> {
-            item.setUrl(item.getCatchup().format(item.getCurrent(), data));
-            return item;
-        });
+    @Override
+    public void cancelUrl() {
+        tasks.cancel(TaskType.URL);
+    }
+
+    private Result getUrlResult(LivePlayRequest request) throws Exception {
+        return request.isCatchup() ? LiveApi.getUrl(request.getChannel(), request.getCatchupData()) : LiveApi.getUrl(request.getChannel());
+    }
+
+    private void postUrl(LivePlayRequest request, Result result) {
+        if (request.getPosition() != C.TIME_UNSET) result.setPosition(request.getPosition());
+        playback.postValue(new PlaybackResult<>(request, result));
+    }
+
+    private void handleParseError(Throwable t) {
+        String message = Notify.getError(t);
+        if (message != null) error.postValue(message);
+        else live.postValue(new Live());
+    }
+
+    private void handleUrlError(LivePlayRequest request, Throwable t) {
+        String message = Notify.getError(t);
+        if (message != null) postUrl(request, Result.error(message));
+        else postUrl(request, new Result());
     }
 
     private void setTimeZone(Live live) {
-        try {
-            TimeZone timeZone = live.getTimeZone().isEmpty() ? TimeZone.getDefault() : TimeZone.getTimeZone(live.getTimeZone());
-            formatDate.setTimeZone(timeZone);
-            formatTime.setTimeZone(timeZone);
-        } catch (Exception ignored) {
-        }
+        this.zoneId = live.getZoneId();
     }
 
-    private void verify(Live item) {
-        Iterator<Group> iterator = item.getGroups().iterator();
-        while (iterator.hasNext()) if (iterator.next().isEmpty()) iterator.remove();
-        if (item.getGroups().isEmpty() || item.getGroups().get(0).isKeep()) return;
-        item.getGroups().add(0, Group.create(R.string.keep));
-        LiveConfig.get().setKeep(item.getGroups());
-    }
-
-    private void execute(int type, Callable<?> callable) {
-        switch (type) {
-            case LIVE:
-                if (executor1 != null) executor1.shutdownNow();
-                executor1 = Executors.newFixedThreadPool(2);
-                executor1.execute(runnable(type, callable, executor1));
-                break;
-            case EPG:
-                if (executor2 != null) executor2.shutdownNow();
-                executor2 = Executors.newFixedThreadPool(2);
-                executor2.execute(runnable(type, callable, executor2));
-                break;
-            case URL:
-                if (executor3 != null) executor3.shutdownNow();
-                executor3 = Executors.newFixedThreadPool(2);
-                executor3.execute(runnable(type, callable, executor3));
-                break;
-            case XML:
-                if (executor4 != null) executor4.shutdownNow();
-                executor4 = Executors.newFixedThreadPool(2);
-                executor4.execute(runnable(type, callable, executor4));
-                break;
-        }
-    }
-
-    private Runnable runnable(int type, Callable<?> callable, ExecutorService executor) {
-        return () -> {
-            try {
-                if (Thread.interrupted()) return;
-                if (type == EPG) epg.postValue((Epg) executor.submit(callable).get(Constant.TIMEOUT_EPG, TimeUnit.MILLISECONDS));
-                if (type == LIVE) live.postValue((Live) executor.submit(callable).get(Constant.TIMEOUT_LIVE, TimeUnit.MILLISECONDS));
-                if (type == XML) xml.postValue((Boolean) executor.submit(callable).get(Constant.TIMEOUT_XML, TimeUnit.MILLISECONDS));
-                if (type == URL) url.postValue((Channel) executor.submit(callable).get(Constant.TIMEOUT_PARSE_LIVE, TimeUnit.MILLISECONDS));
-            } catch (Throwable e) {
-                if (e instanceof InterruptedException || Thread.interrupted()) return;
-                if (e.getCause() instanceof ExtractException) url.postValue(Channel.error(e.getCause().getMessage()));
-                else if (type == URL) url.postValue(new Channel());
-                if (type == LIVE) live.postValue(new Live());
-                if (type == EPG) epg.postValue(new Epg());
-                if (type == XML) xml.postValue(false);
-                e.printStackTrace();
-            }
-        };
+    private <T> void execute(TaskType type, Callable<T> callable, Consumer<T> onSuccess, Consumer<Throwable> onError) {
+        tasks.execute(type, type.timeout, callable, onSuccess, onError);
     }
 
     @Override
     protected void onCleared() {
-        if (executor1 != null) executor1.shutdownNow();
-        if (executor2 != null) executor2.shutdownNow();
-        if (executor3 != null) executor3.shutdownNow();
-        if (executor4 != null) executor4.shutdownNow();
+        tasks.cancelAll();
+        playbackState.reset();
+    }
+
+    private enum TaskType {
+
+        LIVE(Constant.TIMEOUT_LIVE),
+        EPG(Constant.TIMEOUT_EPG),
+        XML(Constant.TIMEOUT_XML),
+        URL(Constant.TIMEOUT_PARSE_LIVE);
+
+        final long timeout;
+
+        TaskType(long timeout) {
+            this.timeout = timeout;
+        }
     }
 }

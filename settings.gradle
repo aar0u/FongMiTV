@@ -2,26 +2,28 @@ pluginManagement {
     repositories {
         gradlePluginPortal()
         mavenCentral()
-        jcenter()
         google()
     }
 }
+
+plugins {
+    id "org.gradle.toolchains.foojay-resolver-convention" version "1.0.0"
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         mavenCentral()
-        jcenter()
         google()
-        flatDir { dirs "$rootDir/app/libs", "$rootDir/quickjs/libs" }
-        maven { url "https://jitpack.io" }
-        maven {
-            url "http://4thline.org/m2"
-            allowInsecureProtocol = true
-        }
+        flatDir { dirs "$rootDir/app/libs" }
+        maven { url = "https://jitpack.io" }
     }
 }
+
 include ':app'
 include ':catvod'
 include ':chaquo'
+include ':nodejs'
 include ':quickjs'
+include ':thunder'
 rootProject.name = "TV"

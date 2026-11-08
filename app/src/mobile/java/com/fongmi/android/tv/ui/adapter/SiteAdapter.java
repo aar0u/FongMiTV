@@ -5,35 +5,29 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.AdapterSiteBinding;
+import com.fongmi.android.tv.utils.ResUtil;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
 
-    private final OnClickListener mListener;
+    private final OnClickListener listener;
     private final List<Site> mItems;
     private boolean search;
     private boolean change;
 
     public SiteAdapter(OnClickListener listener) {
-        this.mListener = listener;
-        this.mItems = VodConfig.get().getSites();
-    }
-
-    public SiteAdapter search(boolean search) {
-        this.search = search;
-        return this;
-    }
-
-    public SiteAdapter change(boolean change) {
-        this.change = change;
-        return this;
+        this.listener = listener;
+        this.mItems = new ArrayList<>();
+        this.addAll();
     }
 
     public interface OnClickListener {
@@ -47,6 +41,24 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         boolean onSearchLongClick(Site item);
 
         boolean onChangeLongClick(Site item);
+    }
+
+    public SiteAdapter search(boolean search) {
+        this.search = search;
+        return this;
+    }
+
+    public SiteAdapter change(boolean change) {
+        this.change = change;
+        return this;
+    }
+
+    private void addAll() {
+        for (Site site : VodConfig.get().getSites()) if (!site.isHide()) mItems.add(site);
+    }
+
+    public List<Site> getItems() {
+        return mItems;
     }
 
     @Override
@@ -67,28 +79,33 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         holder.binding.text.setText(item.getName());
         holder.binding.text.setEnabled(on);
         holder.binding.text.setFocusable(on);
-        holder.binding.text.setSelected(on && item.isActivated());
-        holder.binding.text.setActivated(on && item.isActivated());
+        holder.binding.text.setSelected(on && item.isSelected());
         holder.binding.search.setImageResource(getSearchIcon(item));
         holder.binding.change.setImageResource(getChangeIcon(item));
+        holder.binding.search.setContentDescription(getActionDescription(R.string.dialog_action_site_search, item.isSearchable()));
+        holder.binding.change.setContentDescription(getActionDescription(R.string.dialog_action_site_change, item.isChangeable()));
         holder.binding.search.setVisibility(search ? View.VISIBLE : View.GONE);
         holder.binding.change.setVisibility(change ? View.VISIBLE : View.GONE);
-        holder.binding.text.setOnClickListener(v -> mListener.onTextClick(item));
-        holder.binding.search.setOnClickListener(v -> mListener.onSearchClick(position, item));
-        holder.binding.change.setOnClickListener(v -> mListener.onChangeClick(position, item));
-        holder.binding.search.setOnLongClickListener(v -> mListener.onSearchLongClick(item));
-        holder.binding.change.setOnLongClickListener(v -> mListener.onChangeLongClick(item));
+        holder.binding.text.setOnClickListener(v -> listener.onTextClick(item));
+        holder.binding.search.setOnClickListener(v -> listener.onSearchClick(position, item));
+        holder.binding.change.setOnClickListener(v -> listener.onChangeClick(position, item));
+        holder.binding.search.setOnLongClickListener(v -> listener.onSearchLongClick(item));
+        holder.binding.change.setOnLongClickListener(v -> listener.onChangeLongClick(item));
     }
 
     private int getSearchIcon(Site item) {
         return item.isSearchable() ? R.drawable.ic_site_search : R.drawable.ic_site_block;
     }
 
+    private static String getActionDescription(@StringRes int action, boolean enabled) {
+        return ResUtil.getString(R.string.dialog_action_toggle_hint, ResUtil.getString(action), ResUtil.getString(enabled ? R.string.setting_on : R.string.setting_off));
+    }
+
     private int getChangeIcon(Site item) {
         return item.isChangeable() ? R.drawable.ic_site_change : R.drawable.ic_site_block;
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
+    public class ViewHolder extends RecyclerView.ViewHolder {
 
         private final AdapterSiteBinding binding;
 

@@ -8,23 +8,27 @@ import android.view.animation.Animation;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.widget.AppCompatTextView;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Site;
-import com.fongmi.android.tv.impl.SiteCallback;
+import com.fongmi.android.tv.impl.SiteListener;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.google.android.material.textview.MaterialTextView;
 
 import java.util.List;
 
-public class CustomTitleView extends AppCompatTextView {
+public class CustomTitleView extends MaterialTextView {
 
     private Listener listener;
     private Animation flicker;
     private boolean coolDown;
+
+    private Site getHome() {
+        return VodConfig.get().getHome();
+    }
 
     public CustomTitleView(@NonNull Context context) {
         super(context);
@@ -41,7 +45,7 @@ public class CustomTitleView extends AppCompatTextView {
     }
 
     private boolean hasEvent(KeyEvent event) {
-        return KeyUtil.isEnterKey(event) || KeyUtil.isLeftKey(event) || KeyUtil.isRightKey(event) || (KeyUtil.isUpKey(event) && !coolDown);
+        return !getHome().isEmpty() && (KeyUtil.isLeftKey(event) || KeyUtil.isRightKey(event) || (KeyUtil.isUpKey(event) && !coolDown));
     }
 
     @Override
@@ -53,22 +57,15 @@ public class CustomTitleView extends AppCompatTextView {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (VodConfig.get().getSites().isEmpty()) return false;
-        if (hasEvent(event)) return onKeyDown(event);
-        else return super.dispatchKeyEvent(event);
+        if (!hasEvent(event)) return super.dispatchKeyEvent(event);
+        onKeyDown(event);
+        return true;
     }
 
-    private boolean onKeyDown(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_UP && KeyUtil.isEnterKey(event)) {
-            listener.showDialog();
-        } else if (event.getAction() == KeyEvent.ACTION_DOWN && KeyUtil.isLeftKey(event)) {
-            listener.setSite(getSite(true));
-        } else if (event.getAction() == KeyEvent.ACTION_DOWN && KeyUtil.isRightKey(event)) {
-            listener.setSite(getSite(false));
-        } else if (event.getAction() == KeyEvent.ACTION_DOWN && KeyUtil.isUpKey(event)) {
-            onKeyUp();
-        }
-        return true;
+    private void onKeyDown(KeyEvent event) {
+        if (KeyUtil.isActionDown(event) && KeyUtil.isUpKey(event)) onKeyUp();
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isLeftKey(event)) listener.setSite(getSite(false));
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isRightKey(event)) listener.setSite(getSite(true));
     }
 
     private void onKeyUp() {
@@ -78,14 +75,20 @@ public class CustomTitleView extends AppCompatTextView {
     }
 
     private Site getSite(boolean next) {
-        List<Site> items = VodConfig.get().getSites();
-        int position = VodConfig.getHomeIndex();
-        if (next) position = position > 0 ? --position : items.size() - 1;
-        else position = position < items.size() - 1 ? ++position : 0;
+        List<Site> items = getSites();
+        if (items.isEmpty()) return new Site();
+        int position = items.indexOf(getHome());
+        if (position < 0) position = 0;
+        if (next) position = (position + 1) % items.size();
+        else position = (position - 1 + items.size()) % items.size();
         return items.get(position);
     }
 
-    public interface Listener extends SiteCallback {
+    private List<Site> getSites() {
+        return VodConfig.get().getSites().stream().filter(site -> !site.isHide()).toList();
+    }
+
+    public interface Listener extends SiteListener {
 
         void showDialog();
 

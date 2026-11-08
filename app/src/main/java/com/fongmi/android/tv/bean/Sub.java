@@ -3,16 +3,15 @@ package com.fongmi.android.tv.bean;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
-import androidx.media3.common.MediaItem;
 
-import com.fongmi.android.tv.player.exo.ExoUtil;
-import com.github.catvod.utils.Path;
+import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.player.track.TrackUtil;
 import com.github.catvod.utils.Trans;
+import com.github.catvod.utils.UriUtil;
 import com.google.gson.annotations.SerializedName;
-
-import java.io.File;
 
 public class Sub {
 
@@ -27,30 +26,25 @@ public class Sub {
     @SerializedName("flag")
     private int flag;
 
-    public static Sub from(String path) {
-        if (path.startsWith("http")) {
-            return http(path);
-        } else {
-            return file(Path.local(path));
-        }
+    public static Sub from(String url) {
+        return from(UriUtil.path(url), url);
     }
 
-    private static Sub http(String url) {
-        Uri uri = Uri.parse(url);
+    public static Sub from(String name, String url) {
         Sub sub = new Sub();
         sub.url = url;
-        sub.name = uri.getLastPathSegment();
+        sub.name = name;
         sub.flag = C.SELECTION_FLAG_FORCED;
-        sub.format = ExoUtil.getMimeType(uri.getLastPathSegment());
+        sub.format = TrackUtil.getSubtitleMimeType(sub.name);
         return sub;
     }
 
-    private static Sub file(File file) {
+    public static Sub from(String name, String url, String lang, String format) {
         Sub sub = new Sub();
-        sub.name = file.getName();
-        sub.url = file.getAbsolutePath();
-        sub.flag = C.SELECTION_FLAG_FORCED;
-        sub.format = ExoUtil.getMimeType(file.getName());
+        sub.name = name;
+        sub.url = url;
+        sub.lang = lang;
+        sub.format = format;
         return sub;
     }
 
@@ -74,20 +68,41 @@ public class Sub {
         return flag == 0 ? C.SELECTION_FLAG_DEFAULT : flag;
     }
 
+    public void setFlag(int flag) {
+        this.flag = flag;
+    }
+
+    public int getRawFlag() {
+        return flag;
+    }
+
+    public boolean isForced() {
+        return (flag & C.SELECTION_FLAG_FORCED) != 0;
+    }
+
+    public boolean isEmpty() {
+        return url == null || url.isEmpty();
+    }
+
+    public Uri getUri() {
+        return isEmpty() ? null : UriUtil.uri(getUrl());
+    }
+
     public void trans() {
         if (Trans.pass()) return;
         this.name = Trans.s2t(name);
     }
 
-    public MediaItem.SubtitleConfiguration getConfig() {
-        return new MediaItem.SubtitleConfiguration.Builder(Uri.parse(getUrl())).setLabel(getName()).setMimeType(getFormat()).setSelectionFlags(getFlag()).setLanguage(getLang()).build();
-    }
-
     @Override
     public boolean equals(@Nullable Object obj) {
         if (this == obj) return true;
-        if (!(obj instanceof Sub)) return false;
-        Sub it = (Sub) obj;
+        if (!(obj instanceof Sub it)) return false;
         return getUrl().equals(it.getUrl());
+    }
+
+    @NonNull
+    @Override
+    public String toString() {
+        return App.gson().toJson(this);
     }
 }

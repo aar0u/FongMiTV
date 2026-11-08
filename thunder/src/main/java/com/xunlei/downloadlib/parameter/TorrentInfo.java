@@ -3,7 +3,7 @@ package com.xunlei.downloadlib.parameter;
 import com.xunlei.downloadlib.Util;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class TorrentInfo {
@@ -23,14 +23,12 @@ public class TorrentInfo {
         return mFile;
     }
 
-    private TorrentFileInfo[] getSubFileInfo() {
-        return mSubFileInfo == null ? new TorrentFileInfo[0] : mSubFileInfo;
-    }
-
     public List<TorrentFileInfo> getMedias() {
-        List<TorrentFileInfo> items = new ArrayList<>();
-        for (TorrentFileInfo item : getSubFileInfo()) if (Util.isMedia(item.getExt(), item.getFileSize())) items.add(item.file(getFile()));
-        TorrentFileInfo.Sorter.sort(items);
-        return items;
+        if (mSubFileInfo == null) return List.of();
+        return Arrays.stream(mSubFileInfo)
+                .filter(item -> Util.isMedia(item.getExt(), item.getFileSize()))
+                .map(item -> item.file(getFile()))
+                .sorted()
+                .toList();
     }
 }

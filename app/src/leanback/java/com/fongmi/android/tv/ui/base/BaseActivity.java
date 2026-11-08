@@ -1,31 +1,26 @@
 package com.fongmi.android.tv.ui.base;
 
-import android.app.Activity;
+import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.leanback.widget.ArrayObjectAdapter;
+import androidx.fragment.app.FragmentActivity;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewbinding.ViewBinding;
 
-import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.Setting;
-import com.fongmi.android.tv.event.RefreshEvent;
-import com.fongmi.android.tv.utils.FileUtil;
-import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.ui.custom.CustomWallView;
 import com.fongmi.android.tv.utils.Util;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
-
-import java.io.File;
 
 import me.jessyan.autosize.AutoSizeCompat;
 
@@ -38,19 +33,20 @@ public abstract class BaseActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(getBinding().getRoot());
         EventBus.getDefault().register(this);
+        initView(savedInstanceState);
         Util.hideSystemUI(this);
         setBackCallback();
-        initView();
         initEvent();
     }
 
     @Override
     public void setContentView(View view) {
         super.setContentView(view);
-        refreshWall();
+        if (!customWall()) return;
+        ((ViewGroup) findViewById(android.R.id.content)).addView(new CustomWallView(this, null), 0, new ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT));
     }
 
-    protected Activity getActivity() {
+    protected FragmentActivity getActivity() {
         return this;
     }
 
@@ -58,17 +54,10 @@ public abstract class BaseActivity extends AppCompatActivity {
         return true;
     }
 
-    protected boolean handleBack() {
-        return false;
-    }
-
-    protected void initView() {
+    protected void initView(Bundle savedInstanceState) {
     }
 
     protected void initEvent() {
-    }
-
-    protected void onBackPress() {
     }
 
     protected boolean isVisible(View view) {
@@ -79,28 +68,17 @@ public abstract class BaseActivity extends AppCompatActivity {
         return view.getVisibility() == View.GONE;
     }
 
-    protected void notifyItemChanged(RecyclerView view, ArrayObjectAdapter adapter) {
-        if (!view.isComputingLayout()) adapter.notifyArrayItemRangeChanged(0, adapter.size());
+    protected void notifyItemChanged(RecyclerView view, RecyclerView.Adapter<?> adapter) {
+        view.post(() -> adapter.notifyDataSetChanged());
     }
 
     private void setBackCallback() {
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(handleBack()) {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                onBackPress();
+                onBackInvoked();
             }
         });
-    }
-
-    private void refreshWall() {
-        try {
-            if (!customWall()) return;
-            File file = FileUtil.getWall(Setting.getWall());
-            if (file.exists() && file.length() > 0) getWindow().setBackgroundDrawable(Drawable.createFromPath(file.getAbsolutePath()));
-            else getWindow().setBackgroundDrawableResource(ResUtil.getDrawable(file.getName()));
-        } catch (Exception e) {
-            getWindow().setBackgroundDrawableResource(R.drawable.wallpaper_1);
-        }
     }
 
     private Resources hackResources(Resources resources) {
@@ -113,8 +91,7 @@ public abstract class BaseActivity extends AppCompatActivity {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onRefreshEvent(RefreshEvent event) {
-        if (event.getType() == RefreshEvent.Type.WALL) refreshWall();
+    public void onSubscribe(Object o) {
     }
 
     @Override
@@ -134,9 +111,13 @@ public abstract class BaseActivity extends AppCompatActivity {
         if (hasFocus) Util.hideSystemUI(this);
     }
 
+    protected void onBackInvoked() {
+        finish();
+    }
+
     @Override
     protected void onDestroy() {
-        super.onDestroy();
         EventBus.getDefault().unregister(this);
+        super.onDestroy();
     }
 }

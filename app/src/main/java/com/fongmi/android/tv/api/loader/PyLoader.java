@@ -1,63 +1,50 @@
 package com.fongmi.android.tv.api.loader;
 
-import android.content.Context;
-
 import com.fongmi.android.tv.App;
 import com.github.catvod.crawler.Spider;
-import com.github.catvod.crawler.SpiderNull;
+import com.github.catvod.runtime.PythonRuntime;
+import com.github.catvod.utils.RuntimeModule;
 
-import java.lang.reflect.Method;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
-public class PyLoader {
+public class PyLoader extends SpiderLoader {
 
-    private final ConcurrentHashMap<String, Spider> spiders;
-    private Object loader;
-    private String recent;
+    private final PythonRuntime loader;
+    private volatile String recent;
 
     public PyLoader() {
-        spiders = new ConcurrentHashMap<>();
-        init();
+        this(RuntimeModule.PYTHON.entry(PythonRuntime.class));
     }
 
-    public void clear() {
-        for (Spider spider : spiders.values()) App.execute(spider::destroy);
-        spiders.clear();
+    PyLoader(PyLoader previous) {
+        this(previous.loader);
     }
 
-    public void setRecent(String recent) {
+    private PyLoader(PythonRuntime loader) {
+        loader.initialize();
+        this.loader = loader;
+    }
+
+    @Override
+    protected void clearReferences() {
+        recent = null;
+    }
+
+    public synchronized void setRecent(String recent) {
+        checkOpen();
         this.recent = recent;
     }
 
-    private void init() {
-        try {
-            loader = Class.forName("com.fongmi.chaquo.Loader").newInstance();
-        } catch (Throwable ignored) {
-        }
-    }
-
     public Spider getSpider(String key, String api, String ext) {
-        try {
-            if (spiders.containsKey(key)) return spiders.get(key);
-            Method method = loader.getClass().getMethod("spider", Context.class, String.class);
-            Spider spider = (Spider) method.invoke(loader, App.get(), api);
-            spider.init(App.get(), ext);
-            spiders.put(key, spider);
-            return spider;
-        } catch (Throwable e) {
-            e.printStackTrace();
-            return new SpiderNull();
-        }
+        return load(key, App.get(), ext, () -> newSpider(key, api));
     }
 
-    public Object[] proxyInvoke(Map<String, String> params) {
-        try {
-            if (!params.containsKey("siteKey")) return spiders.get(recent).proxyLocal(params);
-            return BaseLoader.get().getSpider(params).proxyLocal(params);
-        } catch (Throwable e) {
-            e.printStackTrace();
-            return null;
-        }
+    Spider newSpider(String key, String api) {
+        return loader.spider(api, key, JsHost.INSTANCE, JsHost.INSTANCE::getUserAgent);
+    }
+
+    public Object[] proxy(Map<String, String> params) throws Exception {
+        Spider spider = findSpider(recent);
+        return spider != null ? spider.proxy(params) : null;
     }
 }

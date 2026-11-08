@@ -4,13 +4,12 @@ import android.content.SharedPreferences;
 
 import androidx.preference.PreferenceManager;
 
-import com.github.catvod.Init;
-import com.google.gson.internal.LazilyParsedNumber;
+import com.github.catvod.Runtime;
 
 public class Prefers {
 
     public static SharedPreferences getPrefers() {
-        return PreferenceManager.getDefaultSharedPreferences(Init.context());
+        return PreferenceManager.getDefaultSharedPreferences(Runtime.context());
     }
 
     public static String getString(String key) {
@@ -32,6 +31,18 @@ public class Prefers {
     public static int getInt(String key, int defaultValue) {
         try {
             return getPrefers().getInt(key, defaultValue);
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    public static long getLong(String key) {
+        return getLong(key, 0L);
+    }
+
+    public static long getLong(String key, long defaultValue) {
+        try {
+            return getPrefers().getLong(key, defaultValue);
         } catch (Exception e) {
             return defaultValue;
         }
@@ -62,21 +73,18 @@ public class Prefers {
     }
 
     public static void put(String key, Object obj) {
-        if (obj == null) return;
-        if (obj instanceof String) {
-            getPrefers().edit().putString(key, (String) obj).apply();
-        } else if (obj instanceof Boolean) {
-            getPrefers().edit().putBoolean(key, (Boolean) obj).apply();
-        } else if (obj instanceof Float) {
-            getPrefers().edit().putFloat(key, (Float) obj).apply();
-        } else if (obj instanceof Integer) {
-            getPrefers().edit().putInt(key, (Integer) obj).apply();
-        } else if (obj instanceof Long) {
-            getPrefers().edit().putLong(key, (Long) obj).apply();
-        } else if (obj instanceof LazilyParsedNumber) {
-            LazilyParsedNumber number = (LazilyParsedNumber) obj;
-            if (number.toString().contains(".")) put(key, number.floatValue());
-            else put(key, number.intValue());
+        switch (obj) {
+            case String val -> getPrefers().edit().putString(key, val).apply();
+            case Boolean val -> getPrefers().edit().putBoolean(key, val).apply();
+            case Float val -> getPrefers().edit().putFloat(key, val).apply();
+            case Integer val -> getPrefers().edit().putInt(key, val).apply();
+            case Long val -> getPrefers().edit().putLong(key, val).apply();
+            case Number val -> {
+                if (val.toString().contains(".")) put(key, val.floatValue());
+                else put(key, val.intValue());
+            }
+            case null, default -> {
+            }
         }
     }
 

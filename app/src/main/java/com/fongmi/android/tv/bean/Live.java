@@ -1,9 +1,9 @@
 package com.fongmi.android.tv.bean;
 
-import android.net.Uri;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.room.Entity;
 import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
@@ -11,23 +11,26 @@ import androidx.room.PrimaryKey;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.XtreamParser;
 import com.fongmi.android.tv.api.loader.BaseLoader;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.gson.ExtAdapter;
+import com.fongmi.android.tv.gson.HeaderAdapter;
+import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.crawler.Spider;
-import com.github.catvod.utils.Json;
+import com.github.catvod.utils.Auth;
+import com.github.catvod.utils.Task;
+import com.github.catvod.utils.Trans;
 import com.google.common.net.HttpHeaders;
 import com.google.gson.JsonElement;
 import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 
-import java.lang.reflect.Type;
+import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Entity
 public class Live {
@@ -46,8 +49,8 @@ public class Live {
     private String api;
 
     @Ignore
-    @JsonAdapter(ExtAdapter.class)
     @SerializedName("ext")
+    @JsonAdapter(ExtAdapter.class)
     private String ext;
 
     @Ignore
@@ -79,14 +82,6 @@ public class Live {
     private String referer;
 
     @Ignore
-    @SerializedName("username")
-    private String username;
-
-    @Ignore
-    @SerializedName("password")
-    private String password;
-
-    @Ignore
     @SerializedName("timeZone")
     private String timeZone;
 
@@ -94,16 +89,13 @@ public class Live {
     private String keep;
 
     @Ignore
-    @SerializedName("type")
-    private Integer type;
-
-    @Ignore
     @SerializedName("timeout")
     private Integer timeout;
 
     @Ignore
     @SerializedName("header")
-    private JsonElement header;
+    @JsonAdapter(HeaderAdapter.class)
+    private Map<String, String> header;
 
     @Ignore
     @SerializedName("catchup")
@@ -124,26 +116,13 @@ public class Live {
     private boolean pass;
 
     @Ignore
-    private boolean activated;
+    private boolean selected;
 
     @Ignore
     private int width;
 
-    public static Live objectFrom(JsonElement element) {
-        return App.gson().fromJson(element, Live.class);
-    }
-
-    public static List<Live> arrayFrom(String str) {
-        Type listType = new TypeToken<List<Live>>() {}.getType();
-        List<Live> items = App.gson().fromJson(str, listType);
-        return items == null ? Collections.emptyList() : items;
-    }
-
-    public static Live get(String name) {
-        Live live = new Live();
-        live.setName(name);
-        return live;
-    }
+    @Ignore
+    private transient Auth.Context auth;
 
     public Live() {
     }
@@ -151,6 +130,26 @@ public class Live {
     public Live(@NonNull String name, String url) {
         this.name = name;
         this.url = url;
+    }
+
+    public static Live objectFrom(JsonElement element, String spider) {
+        try {
+            Live live = App.gson().fromJson(element, Live.class);
+            if (live.getJar().isEmpty()) live.setJar(spider);
+            live.setApi(UrlUtil.convert(live.getApi()));
+            live.setExt(UrlUtil.convert(live.getExt()));
+            return live.trans();
+        } catch (Exception e) {
+            return new Live();
+        }
+    }
+
+    public static List<Live> findAll() {
+        return AppDatabase.get().getLiveDao().findAll();
+    }
+
+    public static Live find(String name) {
+        return AppDatabase.get().getLiveDao().find(name);
     }
 
     public String getName() {
@@ -221,28 +220,16 @@ public class Live {
         return TextUtils.isEmpty(referer) ? "" : referer;
     }
 
-    public String getUsername() {
-        return TextUtils.isEmpty(username) ? "" : username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getPassword() {
-        return TextUtils.isEmpty(password) ? "" : password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
     public String getTimeZone() {
         return TextUtils.isEmpty(timeZone) ? "" : timeZone;
     }
 
-    public void setTimeZone(String timeZone) {
-        this.timeZone = timeZone;
+    public ZoneId getZoneId() {
+        try {
+            return getTimeZone().isEmpty() ? ZoneId.systemDefault() : ZoneId.of(getTimeZone());
+        } catch (Exception ignored) {
+            return ZoneId.systemDefault();
+        }
     }
 
     public String getKeep() {
@@ -253,16 +240,20 @@ public class Live {
         this.keep = keep;
     }
 
-    public Integer getType() {
-        return type == null ? 0 : type;
+    public long getTimeout() {
+        return timeout == null ? Constant.TIMEOUT_PLAY : TimeUnit.SECONDS.toMillis(Math.max(timeout, 1));
     }
 
-    public Integer getTimeout() {
-        return timeout == null ? Constant.TIMEOUT_PLAY : Math.max(timeout, 1) * 1000;
+    public Map<String, String> getHeader() {
+        return header == null ? new HashMap<>() : header;
     }
 
-    public JsonElement getHeader() {
-        return header;
+    public Auth.Context getAuth() {
+        return auth;
+    }
+
+    public void setAuth(Auth.Context auth) {
+        this.auth = auth;
     }
 
     public Catchup getCatchup() {
@@ -293,16 +284,16 @@ public class Live {
         this.pass = pass;
     }
 
-    public boolean isActivated() {
-        return activated;
+    public boolean isSelected() {
+        return selected;
     }
 
-    public void setActivated(boolean activated) {
-        this.activated = activated;
+    public void setSelected(boolean selected) {
+        this.selected = selected;
     }
 
-    public void setActivated(Live item) {
-        this.activated = item.equals(this);
+    public void setSelected(Live item) {
+        this.selected = item.equals(this);
     }
 
     public int getWidth() {
@@ -313,8 +304,15 @@ public class Live {
         this.width = width;
     }
 
-    public boolean isXtream() {
-        return !getUsername().isEmpty() && !getPassword().isEmpty();
+    public String getEpgApi() {
+        for (String url : getEpg().split(",")) if (url.contains("{")) return url;
+        return getEpg();
+    }
+
+    public List<String> getEpgXml() {
+        List<String> items = new ArrayList<>();
+        for (String epg : getEpg().split(",")) if (!epg.contains("{") && (epg.contains("xml") || epg.contains("gz"))) items.add(epg);
+        return items;
     }
 
     public boolean isEmpty() {
@@ -351,20 +349,22 @@ public class Live {
         return this;
     }
 
+    public Live trans() {
+        if (Trans.pass()) return this;
+        this.name = Trans.s2t(name);
+        return this;
+    }
+
     public Live sync() {
-        Live item = find(getName());
+        sync(find(getName()));
+        return this;
+    }
+
+    public Live sync(Live item) {
         if (item == null) return this;
         setBoot(item.isBoot());
         setPass(item.isPass());
         setKeep(item.getKeep());
-        return this;
-    }
-
-    public Live check() {
-        Uri uri = Uri.parse(getUrl());
-        boolean xtream = XtreamParser.isVerify(uri);
-        if (xtream) setUsername(uri.getQueryParameter("username"));
-        if (xtream) setPassword(uri.getQueryParameter("password"));
         return this;
     }
 
@@ -378,26 +378,31 @@ public class Live {
     }
 
     public Map<String, String> getHeaders() {
-        Map<String, String> headers = Json.toMap(getHeader());
+        Map<String, String> headers = new HashMap<>(getHeader());
         if (!getUa().isEmpty()) headers.put(HttpHeaders.USER_AGENT, getUa());
         if (!getOrigin().isEmpty()) headers.put(HttpHeaders.ORIGIN, getOrigin());
         if (!getReferer().isEmpty()) headers.put(HttpHeaders.REFERER, getReferer());
         return headers;
     }
 
-    public static Live find(String name) {
-        return AppDatabase.get().getLiveDao().find(name);
-    }
-
     public void save() {
         AppDatabase.get().getLiveDao().insertOrUpdate(this);
     }
 
+    public void saveSettings() {
+        saveSettings(List.of(this));
+    }
+
+    public static void saveSettings(List<Live> items) {
+        List<Live> snapshots = new ArrayList<>(items.size());
+        for (Live item : items) snapshots.add(new Live(item.getName(), item.getUrl()).sync(item));
+        Task.executeSerial(() -> AppDatabase.get().getLiveDao().saveSettings(snapshots));
+    }
+
     @Override
-    public boolean equals(Object obj) {
+    public boolean equals(@Nullable Object obj) {
         if (this == obj) return true;
-        if (!(obj instanceof Live)) return false;
-        Live it = (Live) obj;
+        if (!(obj instanceof Live it)) return false;
         return getName().equals(it.getName());
     }
 }

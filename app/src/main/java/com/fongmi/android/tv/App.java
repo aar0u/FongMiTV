@@ -1,51 +1,50 @@
 package com.fongmi.android.tv;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Application;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
+import androidx.media3.mpvplayer.MpvLibrary;
 
-import com.fongmi.android.tv.event.EventIndex;
-import com.fongmi.android.tv.ui.activity.CrashActivity;
+import com.fongmi.android.tv.player.mpv.MpvUtil;
+import com.fongmi.android.tv.receiver.RuntimeReceiver;
+import com.fongmi.android.tv.ui.dialog.SpiderDialog;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.RuntimeInstaller;
 import com.fongmi.hook.Hook;
-import com.github.catvod.Init;
-import com.github.catvod.bean.Doh;
-import com.github.catvod.net.OkHttp;
+import com.github.catvod.Runtime;
+import com.github.catvod.utils.RuntimeModule;
 import com.google.gson.Gson;
-import com.orhanobut.logger.AndroidLogAdapter;
-import com.orhanobut.logger.LogAdapter;
-import com.orhanobut.logger.Logger;
-import com.orhanobut.logger.PrettyFormatStrategy;
 
-import org.greenrobot.eventbus.EventBus;
+import java.io.IOException;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+public class App extends Application implements Application.ActivityLifecycleCallbacks {
 
-import cat.ereza.customactivityoncrash.config.CaocConfig;
+    private static volatile App instance;
 
-public class App extends Application {
-
-    private final ExecutorService executor;
     private final Handler handler;
-    private static App instance;
-    private Activity activity;
     private final Gson gson;
+    private final long time;
+
+    private volatile Activity activity;
     private Hook hook;
 
     public App() {
         instance = this;
-        executor = Executors.newFixedThreadPool(Constant.THREAD_POOL);
-        handler = HandlerCompat.createAsync(Looper.getMainLooper());
         gson = new Gson();
+        time = System.currentTimeMillis();
+        handler = HandlerCompat.createAsync(Looper.getMainLooper());
     }
 
     public static App get() {
@@ -56,12 +55,12 @@ public class App extends Application {
         return get().gson;
     }
 
-    public static Activity activity() {
-        return get().activity;
+    public static long time() {
+        return get().time;
     }
 
-    public static void execute(Runnable runnable) {
-        get().executor.execute(runnable);
+    public static Activity activity() {
+        return get().activity;
     }
 
     public static void post(Runnable runnable) {
@@ -85,69 +84,49 @@ public class App extends Application {
         this.hook = hook;
     }
 
-    private void setActivity(Activity activity) {
-        this.activity = activity;
-    }
-
-    private LogAdapter getLogAdapter() {
-        return new AndroidLogAdapter(PrettyFormatStrategy.newBuilder().methodCount(0).showThreadInfo(false).tag("").build()) {
-            @Override
-            public boolean isLoggable(int priority, String tag) {
-                return true;
-            }
-        };
-    }
-
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
-        Init.set(base);
+        Runtime.set(base);
+        Runtime.setActivity(App::activity);
+        Runtime.setToast(text -> App.post(() -> Notify.show(text)));
+        Runtime.setDialog(SpiderDialog::show);
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        initRuntime();
         Notify.createChannel();
-        Logger.addLogAdapter(getLogAdapter());
-        OkHttp.get().setProxy(Setting.getProxy());
-        OkHttp.get().setDoh(Doh.objectFrom(Setting.getDoh()));
-        EventBus.builder().addIndex(new EventIndex()).installDefaultEventBus();
-        CaocConfig.Builder.create().backgroundMode(CaocConfig.BACKGROUND_MODE_SILENT).errorActivity(CrashActivity.class).apply();
-        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
-            @Override
-            public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
-                if (activity != activity()) setActivity(activity);
-            }
+        registerActivityLifecycleCallbacks(this);
+    }
 
-            @Override
-            public void onActivityStarted(@NonNull Activity activity) {
-                if (activity != activity()) setActivity(activity);
-            }
+    private void initRuntime() {
+        MpvLibrary.setLibraryLoader(MpvUtil::loadRuntime);
+        RuntimeModule.refresh();
+        cleanRuntime();
+        RuntimeReceiver.register(this);
+    }
 
-            @Override
-            public void onActivityResumed(@NonNull Activity activity) {
-                if (activity != activity()) setActivity(activity);
-            }
+    private void cleanRuntime() {
+        if (!isMainProcess()) return;
+        for (RuntimeModule module : RuntimeModule.values()) if (module != RuntimeModule.NODEJS) cleanRuntime(module);
+    }
 
-            @Override
-            public void onActivityPaused(@NonNull Activity activity) {
-                if (activity == activity()) setActivity(null);
-            }
+    private void cleanRuntime(RuntimeModule module) {
+        try {
+            module.clean();
+        } catch (IOException e) {
+            Log.w("RuntimeModule", "Unable to clean runtime cache", e);
+        }
+    }
 
-            @Override
-            public void onActivityStopped(@NonNull Activity activity) {
-                if (activity == activity()) setActivity(null);
-            }
-
-            @Override
-            public void onActivityDestroyed(@NonNull Activity activity) {
-                if (activity == activity()) setActivity(null);
-            }
-
-            @Override
-            public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
-            }
-        });
+    private boolean isMainProcess() {
+        String name = getBaseContext().getPackageName();
+        if (Build.VERSION.SDK_INT >= 28) return name.equals(Application.getProcessName());
+        var processes = getSystemService(ActivityManager.class).getRunningAppProcesses();
+        if (processes != null) for (var process : processes) if (process.pid == Process.myPid()) return name.equals(process.processName);
+        return false;
     }
 
     @Override
@@ -158,5 +137,38 @@ public class App extends Application {
     @Override
     public String getPackageName() {
         return hook != null ? hook.getPackageName() : getBaseContext().getPackageName();
+    }
+
+    @Override
+    public void onActivityResumed(@NonNull Activity activity) {
+        if (activity != activity()) this.activity = activity;
+        RuntimeModule.refresh();
+        RuntimeInstaller.resumeUpdate(activity);
+        Updater.get().notifyModules();
+    }
+
+    @Override
+    public void onActivityPaused(@NonNull Activity activity) {
+        if (activity == activity()) this.activity = null;
+    }
+
+    @Override
+    public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+    }
+
+    @Override
+    public void onActivityDestroyed(@NonNull Activity activity) {
+    }
+
+    @Override
+    public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+    }
+
+    @Override
+    public void onActivityStarted(@NonNull Activity activity) {
+    }
+
+    @Override
+    public void onActivityStopped(@NonNull Activity activity) {
     }
 }
